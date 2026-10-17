@@ -1,4 +1,4 @@
-# Legacy Worker service name kept to avoid creating a new production Worker during rename cleanup.
+﻿# Legacy Worker service name kept to avoid creating a new production Worker during rename cleanup.
 name = "cfchat"
 main = "worker/src/index.js"
 compatibility_date = "2026-04-05"
@@ -9,6 +9,8 @@ command = "npm run schema:generate"
 
 [vars]
 ADMIN_USERNAMES = "admin"
+# 服务端消息与附件 AES-256-GCM 信封加密密钥环（必填，缺少会导致发送消息与上传报错）
+EDGECHAT_ENCRYPTION_KEYRING = '{"activeKeyId":"v1","keys":{"v1":"BASE64_ENCODED_32_BYTE_KEY"}}'
 MESSAGE_RETENTION_DAYS = "7"
 SOFT_DELETE_RETENTION_DAYS = "60"
 GC_BATCH_SIZE = "90"

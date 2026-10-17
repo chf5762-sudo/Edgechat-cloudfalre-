@@ -1,4 +1,4 @@
-import { getStealthSettings } from '../data/stealth-settings.ts';
+﻿import { getStealthSettings } from '../data/stealth-settings.ts';
 import { validateSession } from '../session.js';
 import { cookieRequestAllowed, extractSessionToken } from '../session-cookie.ts';
 import { gatePage, notFound, privateHeaders, submitGate } from './gate.ts';

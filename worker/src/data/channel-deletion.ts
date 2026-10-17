@@ -1,4 +1,4 @@
-interface Statement {
+﻿interface Statement {
 	bind(...values: number[]): Statement;
 }
 
@@ -28,7 +28,7 @@ export async function hardDeleteChannels(db: Database, channelIds: number[]) {
 	}
 	const target = `SELECT id FROM channels
 			WHERE id IN (${placeholders(ids.length)})
-			  AND kind IN ('public', 'private') AND name != 'general'`;
+			  AND kind IN ('public', 'private')`;
 	const [queued, messages, members, , channel] = await db.batch([
 		// 文件键先持久化再删消息；R2 由已有队列分批清理，失败或进程中断也不会丢失任务。
 		db.prepare(

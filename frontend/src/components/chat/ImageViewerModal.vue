@@ -422,17 +422,20 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: max(16px, env(safe-area-inset-top)) 24px 16px;
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.72) 0%, rgba(0, 0, 0, 0) 100%);
+  gap: 12px;
+  padding: max(14px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) 14px max(20px, env(safe-area-inset-left));
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0) 100%);
   pointer-events: none;
+  flex-wrap: nowrap;
 }
 
 .fullscreen-image-viewer__info {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
   pointer-events: auto;
 }
 
@@ -458,18 +461,21 @@ onBeforeUnmount(() => {
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   font-weight: 500;
+  flex-shrink: 0;
 }
 
 .fullscreen-image-viewer__actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   pointer-events: auto;
-  background: rgba(25, 30, 36, 0.75);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(25, 30, 36, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 9999px;
   padding: 4px 8px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .fullscreen-image-viewer__btn {
@@ -558,20 +564,36 @@ onBeforeUnmount(() => {
 
 @media (max-width: 640px) {
   .fullscreen-image-viewer__header {
-    padding: 12px 14px;
-    flex-wrap: wrap;
+    padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) 10px max(10px, env(safe-area-inset-left));
+    gap: 8px;
+    flex-wrap: nowrap;
+  }
+  .fullscreen-image-viewer__info {
+    gap: 6px;
+    flex: 1 1 0%;
+    min-width: 0;
+    overflow: hidden;
   }
   .fullscreen-image-viewer__title {
-    max-width: 180px;
+    max-width: none;
     font-size: 13px;
+    min-width: 0;
+    flex-shrink: 1;
+  }
+  .fullscreen-image-viewer__scale-tag {
+    font-size: 10px;
+    padding: 1px 5px;
+    flex-shrink: 0;
   }
   .fullscreen-image-viewer__actions {
-    gap: 4px;
+    gap: 2px;
     padding: 2px 4px;
+    flex-shrink: 0;
+    margin-left: auto;
   }
   .fullscreen-image-viewer__btn {
-    width: 32px;
-    height: 32px;
+    width: 30px;
+    height: 30px;
   }
   .fullscreen-image-viewer__hint {
     display: none;

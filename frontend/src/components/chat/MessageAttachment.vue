@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { computed, ref, watch } from 'vue';
 import api from '../../api.js';
 import { useOverlayLifecycle } from '../../composables/useOverlayLifecycle.js';
@@ -6,6 +6,7 @@ import { t } from '../../i18n.js';
 import { isPdfAttachment, isPreviewableImageAttachment, isVideoAttachment } from './attachment-utils.js';
 import { isAudioAttachment } from '../../voice-message.js';
 import VoiceMessage from './VoiceMessage.vue';
+import ImageViewerModal from './ImageViewerModal.vue';
 
 const props = defineProps({
   attachment: {
@@ -82,35 +83,12 @@ watch(
         {{ displayName }}
       </a>
 
-      <Teleport to="body">
-        <div
-          v-if="previewOpen"
-          ref="previewEl"
-          class="image-preview-overlay"
-          role="dialog"
-          aria-modal="true"
-          :aria-label="t('attachments.imagePreviewNamed', { name: displayName })"
-          tabindex="-1"
-          @click.self="closePreview"
-        >
-          <div class="image-preview-overlay__toolbar">
-            <span class="image-preview-overlay__title">{{ displayName }}</span>
-            <a
-              class="image-preview-overlay__action"
-              :href="attachmentUrl"
-              target="_blank"
-              rel="noreferrer"
-              :aria-label="openOriginalLabel"
-            >
-              {{ t('attachments.openOriginal') }}
-            </a>
-            <button type="button" class="image-preview-overlay__close" :aria-label="t('attachments.closePreview')" @click="closePreview">
-              {{ t('common.close') }}
-            </button>
-          </div>
-          <img class="image-preview-overlay__image" :src="attachmentUrl" :alt="displayName" />
-        </div>
-      </Teleport>
+      <ImageViewerModal
+        :open="previewOpen"
+        :src="attachmentUrl"
+        :name="displayName"
+        @close="closePreview"
+      />
     </template>
 
     <template v-else-if="isVideo || isPdf">

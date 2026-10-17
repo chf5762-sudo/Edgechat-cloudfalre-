@@ -1,6 +1,6 @@
 ﻿<script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { Download, Maximize2, Minimize2, Printer, RotateCcw, RotateCw, X, ZoomIn, ZoomOut } from '@lucide/vue';
+import { Download, Maximize2, Minimize2, MoreHorizontal, Printer, RotateCcw, RotateCw, X, ZoomIn, ZoomOut } from '@lucide/vue';
 import { printMedia } from '../../utils/media-printer.js';
 import { useOverlayLifecycle } from '../../composables/useOverlayLifecycle.js';
 import { t } from '../../i18n.js';
@@ -35,6 +35,29 @@ const isNativeFullscreen = ref(false);
 
 let startX = 0;
 let startY = 0;
+
+const moreMenuOpen = ref(false);
+const moreMenuRef = ref(null);
+
+function toggleMoreMenu() {
+  moreMenuOpen.value = !moreMenuOpen.value;
+}
+
+function closeMoreMenu() {
+  moreMenuOpen.value = false;
+}
+
+function handleMenuAction(action) {
+  closeMoreMenu();
+  action();
+}
+
+function handleClickOutside(event) {
+  if (moreMenuOpen.value && moreMenuRef.value && !moreMenuRef.value.contains(event.target)) {
+    closeMoreMenu();
+  }
+}
+
 
 const displayName = computed(() => props.name || t('attachments.fallback'));
 const zoomPercentage = computed(() => `${Math.round(scale.value * 100)}%`);
@@ -189,15 +212,20 @@ watch(() => props.open, (isOpen) => {
   if (isOpen) {
     resetTransform();
     window.addEventListener('keydown', handleKeydown);
+    window.addEventListener('pointerdown', handleClickOutside);
     document.addEventListener('fullscreenchange', handleFullscreenChange);
   } else {
     window.removeEventListener('keydown', handleKeydown);
+    window.removeEventListener('pointerdown', handleClickOutside);
+    closeMoreMenu();
     document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKeydown);
+    window.removeEventListener('pointerdown', handleClickOutside);
+    closeMoreMenu();
   document.removeEventListener('fullscreenchange', handleFullscreenChange);
 });
 </script>
@@ -224,36 +252,6 @@ onBeforeUnmount(() => {
           <button
             type="button"
             class="fullscreen-image-viewer__btn"
-            title="放大 (+)"
-            aria-label="放大"
-            @click="zoomIn"
-          >
-            <ZoomIn :size="18" />
-          </button>
-
-          <button
-            type="button"
-            class="fullscreen-image-viewer__btn"
-            title="缩小 (-)"
-            aria-label="缩小"
-            @click="zoomOut"
-          >
-            <ZoomOut :size="18" />
-          </button>
-
-          <button
-            type="button"
-            class="fullscreen-image-viewer__btn"
-            title="重置居中自适应 (0)"
-            aria-label="重置"
-            @click="resetTransform"
-          >
-            <RotateCcw :size="18" />
-          </button>
-
-          <button
-            type="button"
-            class="fullscreen-image-viewer__btn"
             title="顺时针旋转90° (R)"
             aria-label="旋转"
             @click="rotate"
@@ -272,25 +270,78 @@ onBeforeUnmount(() => {
             <Maximize2 v-else :size="18" />
           </button>
 
-          <button
-            type="button"
-            class="fullscreen-image-viewer__btn"
-            title="一键打印 (P)"
-            aria-label="一键打印"
-            @click="handlePrint"
-          >
-            <Printer :size="18" />
-          </button>
+          <!-- 更多二级功能菜单 -->
+          <div ref="moreMenuRef" class="fullscreen-image-viewer__menu-wrapper">
+            <button
+              type="button"
+              class="fullscreen-image-viewer__btn"
+              :class="{ 'fullscreen-image-viewer__btn--active': moreMenuOpen }"
+              title="更多操作"
+              aria-label="更多操作"
+              :aria-expanded="moreMenuOpen"
+              @click="toggleMoreMenu"
+            >
+              <MoreHorizontal :size="18" />
+            </button>
 
-          <button
-            type="button"
-            class="fullscreen-image-viewer__btn"
-            title="下载原图"
-            aria-label="下载原图"
-            @click="downloadImage"
-          >
-            <Download :size="18" />
-          </button>
+            <div v-if="moreMenuOpen" class="fullscreen-image-viewer__dropdown" role="menu">
+              <button
+                type="button"
+                class="fullscreen-image-viewer__menu-item"
+                role="menuitem"
+                @click="handleMenuAction(zoomIn)"
+              >
+                <ZoomIn :size="16" />
+                <span class="fullscreen-image-viewer__menu-label">放大</span>
+                <span class="fullscreen-image-viewer__menu-shortcut">+</span>
+              </button>
+
+              <button
+                type="button"
+                class="fullscreen-image-viewer__menu-item"
+                role="menuitem"
+                @click="handleMenuAction(zoomOut)"
+              >
+                <ZoomOut :size="16" />
+                <span class="fullscreen-image-viewer__menu-label">缩小</span>
+                <span class="fullscreen-image-viewer__menu-shortcut">-</span>
+              </button>
+
+              <button
+                type="button"
+                class="fullscreen-image-viewer__menu-item"
+                role="menuitem"
+                @click="handleMenuAction(resetTransform)"
+              >
+                <RotateCcw :size="16" />
+                <span class="fullscreen-image-viewer__menu-label">自适应居中</span>
+                <span class="fullscreen-image-viewer__menu-shortcut">0</span>
+              </button>
+
+              <div class="fullscreen-image-viewer__menu-divider" role="separator"></div>
+
+              <button
+                type="button"
+                class="fullscreen-image-viewer__menu-item"
+                role="menuitem"
+                @click="handleMenuAction(handlePrint)"
+              >
+                <Printer :size="16" />
+                <span class="fullscreen-image-viewer__menu-label">打印图片</span>
+                <span class="fullscreen-image-viewer__menu-shortcut">P</span>
+              </button>
+
+              <button
+                type="button"
+                class="fullscreen-image-viewer__menu-item"
+                role="menuitem"
+                @click="handleMenuAction(downloadImage)"
+              >
+                <Download :size="16" />
+                <span class="fullscreen-image-viewer__menu-label">下载原图</span>
+              </button>
+            </div>
+          </div>
 
           <button
             type="button"
@@ -526,4 +577,88 @@ onBeforeUnmount(() => {
     display: none;
   }
 }
+
+.fullscreen-image-viewer__menu-wrapper {
+  position: relative;
+  display: inline-flex;
+}
+
+.fullscreen-image-viewer__btn--active {
+  background: rgba(255, 255, 255, 0.28) !important;
+  color: #fff !important;
+}
+
+.fullscreen-image-viewer__dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 176px;
+  padding: 6px;
+  background: rgba(26, 32, 44, 0.94);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 100;
+  animation: viewer-menu-in 0.15s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes viewer-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.fullscreen-image-viewer__menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #e2e8f0;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.14s ease;
+}
+
+.fullscreen-image-viewer__menu-item:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+}
+
+.fullscreen-image-viewer__menu-label {
+  flex: 1;
+  white-space: nowrap;
+}
+
+.fullscreen-image-viewer__menu-shortcut {
+  font-size: 11px;
+  color: #94a3b8;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-family: ui-monospace, monospace;
+}
+
+.fullscreen-image-viewer__menu-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 4px 6px;
+}
+
 </style>

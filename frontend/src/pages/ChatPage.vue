@@ -1,5 +1,6 @@
 <script setup>
-import { ArrowLeft, Ban, Bell, BellOff, ContactRound, Menu, MessageCircle, Phone, Settings, UsersRound } from '@lucide/vue';
+import { ArrowLeft, Ban, Bell, BellOff, ContactRound, Menu, MessageCircle, Phone, Settings, UploadCloud, UsersRound } from '@lucide/vue';
+import { useChatFileDrop } from '../composables/useChatFileDrop.js';
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import {
@@ -173,6 +174,20 @@ const {
   onRoomActivity: handleRoomActivity,
   onRoomAccessRevoked: handleRoomAccessRevoked
 });
+
+const {
+  isDragging: isChatDragging,
+  handleDragEnter,
+  handleDragOver,
+  handleDragLeave,
+  handleDrop
+} = useChatFileDrop({
+  disabled: computed(() => !activeRoom.value || activeDmBlockedByMe.value),
+  onDrop: (files) => {
+    uploadAttachment(files);
+  }
+});
+
 
 const voiceCall = useVoiceCall({ userId: session.value?.userId, error,
   shouldRing: call => !isRoomMuted({ kind: 'dm', id: call.roomId }),
@@ -691,7 +706,24 @@ watch(
     />
 
     <!-- Right Main Chat Window -->
-    <main v-if="!isContactsView" class="chat-main">
+    <main
+      v-if="!isContactsView"
+      class="chat-main"
+      :class="{ 'chat-main--drag-over': isChatDragging }"
+      @dragenter="handleDragEnter"
+      @dragover="handleDragOver"
+      @dragleave="handleDragLeave"
+      @drop="handleDrop"
+    >
+      <div v-if="isChatDragging && activeRoom && !activeDmBlockedByMe" class="chat-drop-overlay">
+        <div class="chat-drop-overlay__card">
+          <div class="chat-drop-overlay__icon">
+            <UploadCloud :size="44" :stroke-width="1.8" />
+          </div>
+          <h3 class="chat-drop-overlay__title">松开鼠标即可添加附件</h3>
+          <p class="chat-drop-overlay__subtitle">文件将添加到底部待发送列表中</p>
+        </div>
+      </div>
       <template v-if="activeRoom">
         <header class="chat-header" :class="{ 'chat-header--dm': activeRoom.kind === 'dm' && !isCapacitorAndroid }">
           <button
@@ -1256,6 +1288,7 @@ watch(
 }
 
 .chat-main {
+  position: relative;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -1720,6 +1753,101 @@ watch(
   .tooltip::after,
   .chat-header__button {
     transition: none;
+  }
+}
+
+.chat-main--drag-over {
+  outline: 2px dashed rgba(59, 130, 246, 0.4);
+  outline-offset: -2px;
+}
+
+.chat-drop-overlay {
+  position: absolute;
+  inset: 12px;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16px;
+  border: 2px dashed #3b82f6;
+  background: rgba(15, 23, 42, 0.78);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  pointer-events: none;
+  animation: chatDropFadeIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.36), inset 0 0 24px rgba(59, 130, 246, 0.15);
+}
+
+.chat-drop-overlay__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 12px;
+  padding: 28px 40px;
+  border-radius: 20px;
+  background: rgba(30, 41, 59, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.35);
+  transform: scale(1);
+  animation: chatDropScaleUp 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.chat-drop-overlay__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  box-shadow: 0 0 24px rgba(59, 130, 246, 0.35);
+  animation: chatDropPulse 1.8s infinite ease-in-out;
+}
+
+.chat-drop-overlay__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #f8fafc;
+  letter-spacing: -0.01em;
+}
+
+.chat-drop-overlay__subtitle {
+  margin: 0;
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+@keyframes chatDropFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes chatDropScaleUp {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes chatDropPulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.25);
+  }
+  50% {
+    transform: scale(1.06);
+    box-shadow: 0 0 32px rgba(59, 130, 246, 0.55);
   }
 }
 </style>

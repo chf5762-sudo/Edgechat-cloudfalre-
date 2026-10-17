@@ -1,5 +1,6 @@
-﻿<script setup>
+<script setup>
 import { computed, ref, watch } from 'vue';
+import { Printer } from '@lucide/vue';
 import api from '../../api.js';
 import { useOverlayLifecycle } from '../../composables/useOverlayLifecycle.js';
 import { t } from '../../i18n.js';
@@ -7,6 +8,7 @@ import { isPdfAttachment, isPreviewableImageAttachment, isVideoAttachment } from
 import { isAudioAttachment } from '../../voice-message.js';
 import VoiceMessage from './VoiceMessage.vue';
 import ImageViewerModal from './ImageViewerModal.vue';
+import { printMedia } from '../../utils/media-printer.js';
 
 const props = defineProps({
   attachment: {
@@ -45,6 +47,14 @@ function closePreview() {
   previewOpen.value = false;
 }
 
+function handlePrint() {
+  printMedia({
+    url: attachmentUrl.value,
+    filename: displayName.value,
+    isPdf: isPdf.value
+  });
+}
+
 watch(
   () => props.attachment?.key || props.attachment?.url,
   () => {
@@ -55,24 +65,35 @@ watch(
 </script>
 
 <template>
-	  <div class="message-attachment" :class="{ 'message-attachment--image': isImage, 'message-attachment--audio': isAudio }">
-	    <VoiceMessage v-if="isAudio" :attachment="attachment" />
-	    <template v-else-if="isImage">
-      <button
-        v-if="!imageFailed"
-        type="button"
-        class="message-attachment__image-button"
-        :aria-label="t('attachments.previewNamed', { name: displayName })"
-        @click="openPreview"
-      >
-        <img
-          class="message-attachment__image"
-          :src="attachmentUrl"
-          :alt="displayName"
-          loading="lazy"
-          @error="imageFailed = true"
-        />
-      </button>
+  <div class="message-attachment" :class="{ 'message-attachment--image': isImage, 'message-attachment--audio': isAudio }">
+    <VoiceMessage v-if="isAudio" :attachment="attachment" />
+    <template v-else-if="isImage">
+      <div v-if="!imageFailed" class="message-attachment__image-container">
+        <button
+          type="button"
+          class="message-attachment__image-button"
+          :aria-label="t('attachments.previewNamed', { name: displayName })"
+          @click="openPreview"
+        >
+          <img
+            class="message-attachment__image"
+            :src="attachmentUrl"
+            :alt="displayName"
+            loading="lazy"
+            @error="imageFailed = true"
+          />
+        </button>
+        <button
+          type="button"
+          class="message-attachment__quick-print"
+          title="一键打印"
+          aria-label="一键打印"
+          @click.stop="handlePrint"
+        >
+          <Printer :size="13" />
+          <span>打印</span>
+        </button>
+      </div>
       <a
         v-else
         :href="attachmentUrl"
@@ -112,7 +133,20 @@ watch(
         loading="lazy"
         referrerpolicy="no-referrer"
       ></iframe>
-      <a :href="attachmentUrl" target="_blank" rel="noreferrer" class="chat-bubble__attachment message-attachment__file">{{ displayName }}</a>
+      <div class="message-attachment__file-row">
+        <a :href="attachmentUrl" target="_blank" rel="noreferrer" class="chat-bubble__attachment message-attachment__file">{{ displayName }}</a>
+        <button
+          v-if="isPdf"
+          type="button"
+          class="message-attachment__file-print"
+          title="一键打印"
+          aria-label="一键打印"
+          @click.stop="handlePrint"
+        >
+          <Printer :size="13" />
+          <span>打印</span>
+        </button>
+      </div>
     </template>
     <a
       v-else

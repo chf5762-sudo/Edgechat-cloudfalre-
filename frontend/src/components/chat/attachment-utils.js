@@ -47,5 +47,12 @@ export function isVideoAttachment(attachment) {
 }
 
 export function isPdfAttachment(attachment) {
-  return cleanMimeType(attachment?.type) === 'application/pdf';
+  if (!attachment) {
+    return false;
+  }
+  if (cleanMimeType(attachment?.type) === 'application/pdf') {
+    return true;
+  }
+  const extension = extensionFrom(attachment?.name) || extensionFrom(attachment?.url);
+  return extension === 'pdf';
 }

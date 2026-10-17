@@ -1,6 +1,7 @@
 ﻿<script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { Download, Maximize2, Minimize2, RotateCcw, RotateCw, X, ZoomIn, ZoomOut } from '@lucide/vue';
+import { Download, Maximize2, Minimize2, Printer, RotateCcw, RotateCw, X, ZoomIn, ZoomOut } from '@lucide/vue';
+import { printMedia } from '../../utils/media-printer.js';
 import { useOverlayLifecycle } from '../../composables/useOverlayLifecycle.js';
 import { t } from '../../i18n.js';
 
@@ -143,6 +144,10 @@ function handleFullscreenChange() {
   isNativeFullscreen.value = Boolean(document.fullscreenElement);
 }
 
+function handlePrint() {
+  printMedia({ url: props.src, filename: displayName.value, isPdf: false });
+}
+
 function downloadImage() {
   const link = document.createElement('a');
   link.href = props.src;
@@ -168,6 +173,12 @@ function handleKeydown(event) {
   } else if (event.key === 'r' || event.key === 'R') {
     event.preventDefault();
     rotate();
+  }   else if ((event.ctrlKey || event.metaKey) && event.key === 'p') {
+    event.preventDefault();
+    handlePrint();
+  } else if (event.key === 'p' || event.key === 'P') {
+    event.preventDefault();
+    handlePrint();
   } else if (event.key === 'f' || event.key === 'F') {
     event.preventDefault();
     toggleFullscreen();
@@ -259,6 +270,16 @@ onBeforeUnmount(() => {
           >
             <Minimize2 v-if="isNativeFullscreen" :size="18" />
             <Maximize2 v-else :size="18" />
+          </button>
+
+          <button
+            type="button"
+            class="fullscreen-image-viewer__btn"
+            title="一键打印 (P)"
+            aria-label="一键打印"
+            @click="handlePrint"
+          >
+            <Printer :size="18" />
           </button>
 
           <button

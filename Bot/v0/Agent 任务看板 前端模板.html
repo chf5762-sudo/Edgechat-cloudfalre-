@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Agent 任务看板</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--tx:#1d2330;--mut:#6b7280;--bd:#e5e7eb;--ok:#15803d;--okb:#dcfce7;--dg:#1d4ed8;--dgb:#dbeafe;--td:#4b5563;--tdb:#e5e7eb;--rv:#6d28d9;--rvb:#ede9fe;--fo:#c2410c;--fob:#ffedd5;--un:#b91c1c;--unb:#fee2e2;--warnb:#fef3c7;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1218;--card:#181c25;--tx:#e5e7eb;--mut:#9ca3af;--bd:#2a303c;--ok:#4ade80;--okb:#14301f;--dg:#93c5fd;--dgb:#172554;--td:#d1d5db;--tdb:#2a303c;--rv:#c4b5fd;--rvb:#2e1f5e;--fo:#fdba74;--fob:#3d2410;--un:#fca5a5;--unb:#3b1414;--warnb:#3a2e0b}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.5 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+.wrap{max-width:1280px;margin:0 auto;padding:20px 16px}
+h1{font-size:20px;margin:0 0 4px}.sub{color:var(--mut);margin-bottom:16px}
+.pub,.box,.stat,.legend{background:var(--card);border:1px solid var(--bd);border-radius:10px}
+.pub{padding:14px;margin-bottom:16px}.pub h2{font-size:14px;margin:0 0 10px}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+input,select{border:1px solid var(--bd);background:var(--bg);color:var(--tx);border-radius:8px;padding:7px 10px;font:inherit}
+.pub input[type=text]{flex:1;min-width:200px}
+button{font:inherit;cursor:pointer}
+.go{background:var(--tx);color:var(--bg);border:0;border-radius:8px;padding:8px 18px}
+.msg{margin-top:8px;font-size:12px;color:var(--mut)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(105px,1fr));gap:10px;margin-bottom:16px}
+.stat{padding:10px 12px}.stat b{display:block;font-size:22px}.stat span{color:var(--mut);font-size:12px}
+.bar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.chip{border:1px solid var(--bd);background:var(--card);color:var(--tx);padding:4px 11px;border-radius:99px;font-size:13px}
+.chip.on{background:var(--tx);color:var(--bg);border-color:var(--tx)}
+.box{overflow-x:auto}
+table{width:100%;border-collapse:collapse;min-width:1250px}
+th{text-align:left;color:var(--mut);font-weight:500;font-size:12px;padding:10px 10px;border-bottom:1px solid var(--bd);white-space:nowrap}
+td{padding:10px;border-bottom:1px solid var(--bd);vertical-align:top}
+tr:last-child td{border-bottom:0}
+tr.late td{background:var(--warnb)}
+.id,.mut{color:var(--mut)}.sum{display:block;margin-top:3px;font-size:12px;color:var(--mut)}
+.bot{display:inline-flex;align-items:center;gap:5px;font-weight:500;white-space:nowrap}
+.av{width:20px;height:20px;border-radius:50%;display:inline-grid;place-items:center;font-size:10px;color:#fff}
+.b{display:inline-block;padding:2px 9px;border-radius:99px;font-size:12px;font-weight:500;white-space:nowrap}
+.s-todo{background:var(--tdb);color:var(--td)}.s-doing{background:var(--dgb);color:var(--dg)}
+.s-review{background:var(--rvb);color:var(--rv)}.s-pass{background:var(--okb);color:var(--ok)}
+.s-failed{background:var(--fob);color:var(--fo)}.s-unsolved{background:var(--unb);color:var(--un)}
+.s-manual{background:var(--unb);color:var(--un);outline:1px solid var(--un)}
+.s-closed{background:var(--tdb);color:var(--td);text-decoration:line-through}
+.acc input{width:150px;margin-bottom:4px}
+.ab{border:1px solid var(--bd);border-radius:6px;padding:3px 9px;background:var(--card);color:var(--tx);font-size:12px;margin-right:4px}
+.ab.ok{color:var(--ok);border-color:var(--ok)}.ab.no{color:var(--un);border-color:var(--un)}
+.legend{margin-top:14px;padding:12px 14px;font-size:12px;color:var(--mut)}
+.legend div{margin:3px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Agent 任务看板</h1>
+  <div class="sub">所有任务全员可见；BOT 只能操作派给自己的任务；验收由项目验收 BOT 负责（同时是该项目任务的发布人），验收失败自动发布下一轮，默认最多 3 轮</div>
+
+  <div class="pub">
+    <h2>发布任务</h2>
+    <div class="row">
+      <input type="text" id="pt" placeholder="任务内容，一句话说清楚">
+      <select id="pj"></select>
+      <select id="px"></select>
+      <select id="pw"></select>
+      <select id="pd"><option value="30">时限 30 分钟</option><option value="60" selected>时限 1 小时</option><option value="120">时限 2 小时</option><option value="240">时限 4 小时</option><option value="480">时限 8 小时</option><option value="720">时限 12 小时</option><option value="1440">时限 24 小时</option></select>
+      <button class="go" id="pg">发布</button>
+    </div>
+    <div class="msg" id="pm"></div>
+  </div>
+
+  <div class="stats" id="stats"></div>
+  <div class="bar" id="bar"></div>
+
+  <div class="box"><table>
+    <thead><tr><th>#</th><th>项目</th><th>任务</th><th>指派给</th><th>验收 BOT</th><th>状态</th><th>轮次</th><th>发布人</th><th>发布时间</th><th>完成时间</th><th>结果</th><th>验收 / 操作</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table></div>
+
+  <div class="legend">
+    <div><b>状态说明</b>（黄色行 = 超时）</div>
+    <div>待领取：已发布，被指派 BOT 尚未认领　|　进行中：BOT 已认领</div>
+    <div>待验收：BOT 已提交结果，等待本项目验收 BOT 验收（下方示例可点「验收成功 / 验收失败」体验）</div>
+    <div>验收成功：终态，结案　|　验收失败：自动汇总并发布下一轮任务，轮次 +1</div>
+    <div>未解决：BOT 报告失败，或超时未提交结果（系统自动转入）</div>
+    <div>需人工处理：达到最大轮次（3）仍验收失败，不再自动发布，管理员审批三选一：再开一轮（轮次重置）/ 改派 / 关闭</div>
+    <div>已关闭：管理员终止任务（终态）　|　未解决的任务，管理员可「放回待领取」或「改派」</div>
+    <div>右侧「验收 / 操作」列按当前状态显示对应角色的操作，可从发布一路点到结案或终止</div>
+  </div>
+</div>
+
+<script>
+var COL={"写码BOT":"#2563eb","文档BOT":"#9333ea","数据BOT":"#0d9488","排课验收BOT":"#d97706","数据验收BOT":"#be185d","文档验收BOT":"#4f46e5","管理员":"#475569","测试BOT":"#0891b2","报表BOT":"#65a30d","写作BOT":"#c026d3"};
+var PJ={"排课系统":["排课验收BOT",["写码BOT","测试BOT"]],"数据报表":["数据验收BOT",["数据BOT","报表BOT"]],"文档库":["文档验收BOT",["文档BOT","写作BOT"]]};
+var MAX=3,NEXT=70,F="all";
+var ST={todo:"待领取",doing:"进行中",review:"待验收",pass:"✔ 验收成功",failed:"✖ 验收失败",unsolved:"未解决",manual:"⛔ 需人工处理",closed:"已关闭"};
+function mk(id,p,t,s,r,pt,dt,res,acc,sum,late){return{id:id,p:p,t:t,a:PJ[p][1][0],c:PJ[p][0],s:s,r:r,pub:PJ[p][0],pt:pt,dt:dt,res:res,acc:acc,sum:sum||"",late:!!late}}
+var T=[
+mk(64,"文档库","整理上周会议纪要","todo",1,"11:00","-","-","-"),
+mk(63,"排课系统","核对周日固定课教师名单","doing",1,"10:30","-","处理中","-"),
+mk(62,"文档库","整理本周会议纪要","review",1,"10:00","10:50","已整理并归档","待验收"),
+mk(61,"数据报表","同步校区课表到报表库","review",1,"13:00","14:20","已同步 12 个校区","待验收"),
+mk(65,"数据报表","导出本月退费明细","unsolved",1,"08:00","09:00","超时未提交结果（系统自动转入）","-","",true),
+mk(51,"文档库","把昨天的bug报告改成Word版","pass",1,"14:00","16:00","Word版已生成并归档","✔ 通过 · 第 1 轮结案"),
+mk(41,"数据报表","导出本月消课流水表","failed",1,"09:00","09:50","已导出","✖ 失败：缺少金额列"),
+mk(42,"数据报表","导出本月消课流水表","failed",2,"09:51","10:30","已补充金额列","✖ 失败：日期格式不是 YYYY-MM-DD","自动汇总：原任务 + 上轮结果「已导出」+ 失败原因「缺少金额列」"),
+mk(43,"数据报表","导出本月消课流水表","pass",3,"10:31","11:10","已修正列与日期格式","✔ 通过 · 第 3 轮结案","自动汇总：原任务 + 上轮结果「已补充金额列」+ 失败原因「日期格式不是 YYYY-MM-DD」"),
+mk(31,"排课系统","排课系统周日18点固定课挂错老师，查一下","failed",1,"09:00","09:40","已修复周日固定课","✖ 失败：周六固定课同样出错"),
+mk(32,"排课系统","排课系统周日18点固定课挂错老师，查一下","failed",2,"09:41","10:20","已补充周六修复","✖ 失败：缺少单元测试","自动汇总：原任务 + 上轮结果「已修复周日固定课」+ 失败原因「周六固定课同样出错」"),
+mk(33,"排课系统","排课系统周日18点固定课挂错老师，查一下","manual",3,"10:21","11:00","已补单测，覆盖不足","✖ 失败：用例未覆盖跨周场景；已达 3 轮上限，等待管理员审批","自动汇总：原任务 + 上轮结果「已补充周六修复」+ 失败原因「缺少单元测试」")
+];
+function bot(n){return '<span class="bot"><span class="av" style="background:'+COL[n]+'">'+n[0]+'</span>'+n+'</span>'}
+function hm(){return new Date().toTimeString().slice(0,5)}
+function accCell(x){
+  var I='<input id="n'+x.id+'" placeholder="';
+  function B(a,l,c){return '<button class="ab '+(c||'')+'" data-a="'+a+'" data-id="'+x.id+'">'+l+'</button>'}
+  if(x.s==="todo")return '<div class="mut">执行BOT：</div>'+B("claim","认领");
+  if(x.s==="doing")return '<div class="acc"><div class="mut">执行BOT / 系统：</div>'+I+'结果摘要 / 失败原因"><br>'+B("done","提交完成","ok")+B("bad","报告失败","no")+B("tmo","⏱模拟超时")+'</div>';
+  if(x.s==="review")return '<div class="acc"><div class="mut">验收BOT：</div>'+I+'失败原因（失败时填写）"><br>'+B("pass","验收成功","ok")+B("fail","验收失败","no")+'</div>';
+  if(x.s==="unsolved")return '<div class="mut">管理员：</div>'+B("retry","放回待领取")+B("reassign","改派");
+  if(x.s==="manual")return '<div class="acc"><div class="mut">管理员审批：'+x.acc+'</div>'+B("round","再开一轮","ok")+B("reassign","改派")+B("close","关闭","no")+'</div>';
+  return x.acc;
+}
+function render(){
+  var c={all:T.length,todo:0,doing:0,review:0,pass:0,failed:0,unsolved:0,manual:0,closed:0,late:0};
+  T.forEach(function(x){c[x.s]++;if(x.late)c.late++});
+  var S=[["全部","all"],["待领取","todo"],["进行中","doing"],["待验收","review"],["验收成功","pass"],["验收失败","failed"],["未解决","unsolved"],["需人工处理","manual"],["已关闭","closed"],["超时","late"]];
+  document.getElementById("stats").innerHTML=S.map(function(s){return '<div class="stat"><b>'+c[s[1]]+'</b><span>'+s[0]+'</span></div>'}).join("");
+  document.getElementById("bar").innerHTML=S.map(function(s){return '<button class="chip'+(F===s[1]?' on':'')+'" data-f="'+s[1]+'">'+s[0]+'</button>'}).join("")
+   +'<span style="flex:1"></span>'+Object.keys(PJ).map(function(p){return '<button class="chip'+(F==="p:"+p?' on':'')+'" data-f="p:'+p+'">'+p+'</button>'}).join("");
+  document.getElementById("rows").innerHTML=T.filter(function(x){
+    if(F==="all")return true;if(F==="late")return x.late;
+    if(F.indexOf("p:")===0)return x.p===F.slice(2);return x.s===F}).map(function(x){
+    return '<tr'+(x.late?' class="late"':'')+'><td class="id">#'+x.id+'</td><td>'+x.p+'</td><td>'+x.t+(x.sum?'<span class="sum">'+x.sum+'</span>':'')+'</td><td>'+bot(x.a)+'</td><td>'+bot(x.c)+'</td><td><span class="b s-'+x.s+'">'+ST[x.s]+'</span></td><td>第 '+x.r+' / '+MAX+' 轮</td><td>'+x.pub+'</td><td class="mut">'+x.pt+'</td><td class="mut">'+x.dt+'</td><td>'+x.res+'</td><td>'+accCell(x)+'</td></tr>';
+  }).join("");
+}
+function fillPub(){
+  var p=document.getElementById("pj").value;
+  document.getElementById("px").innerHTML=PJ[p][1].map(function(n){return '<option>'+n+'</option>'}).join("");
+  document.getElementById("pw").innerHTML='<option value="'+PJ[p][0]+'">发布人：'+PJ[p][0]+'</option><option value="管理员">发布人：管理员</option>';
+  document.getElementById("pm").textContent="验收 BOT：「"+PJ[p][0]+"」（项目验收人，不能验收自己执行的任务）；发布后状态为「待领取」";
+}
+document.getElementById("pj").innerHTML=Object.keys(PJ).map(function(p){return '<option>'+p+'</option>'}).join("");
+document.getElementById("pj").onchange=fillPub;fillPub();
+document.getElementById("pg").onclick=function(){
+  var t=document.getElementById("pt").value.trim();if(!t){alert("请填写任务内容");return}
+  var p=document.getElementById("pj").value,x=mk(NEXT++,p,t,"todo",1,hm(),"-","-","-");
+  x.pub=document.getElementById("pw").value;T.unshift(x);document.getElementById("pt").value="";F="all";render();
+};
+document.addEventListener("click",function(e){
+  var d=e.target.dataset||{};
+  if(d.f){F=(F===d.f?"all":d.f);render();return}
+  if(d.a){
+    var x=T.filter(function(y){return y.id==d.id})[0];if(!x)return;
+    var el=document.getElementById("n"+x.id),val=el?el.value.trim():"",why=val||"未说明原因",ex=PJ[x.p][1];
+    if(d.a==="claim"){x.s="doing";x.res="处理中"}
+    else if(d.a==="done"){x.s="review";x.dt=hm();x.res=val||"已完成";x.acc="待验收"}
+    else if(d.a==="bad"){x.s="unsolved";x.dt=hm();x.res="未解决："+why}
+    else if(d.a==="tmo"){x.s="unsolved";x.late=true;x.dt=hm();x.res="超时未提交结果（系统自动转入）"}
+    else if(d.a==="retry"){x.s="todo";x.late=false;x.res="-";x.dt="-"}
+    else if(d.a==="reassign"){var old=x.a;x.a=ex[(ex.indexOf(x.a)+1)%ex.length];x.s="todo";x.late=false;x.dt="-";x.res="已改派（原："+old+"）"}
+    else if(d.a==="close"){x.s="closed";x.acc="管理员已关闭"}
+    else if(d.a==="round"){x.s="failed";x.acc+="；管理员批准再开一轮";T.unshift(mk(NEXT++,x.p,x.t,"todo",1,hm(),"-","-","-","自动汇总：管理员批准再开一轮（轮次重置）+ 上轮结果「"+x.res+"」"))}
+    else
+    if(d.a==="pass"){x.s="pass";x.acc="✔ 通过 · 第 "+x.r+" 轮结案"}
+    else if(x.r>=MAX){x.s="manual";x.acc="✖ 失败："+why+"；已达 "+MAX+" 轮上限，等待管理员审批"}
+    else{
+      x.s="failed";x.acc="✖ 失败："+why;
+      var n=mk(NEXT++,x.p,x.t,"todo",x.r+1,hm(),"-","-","-","自动汇总：原任务 + 上轮结果「"+x.res+"」+ 失败原因「"+why+"」");
+      T.unshift(n);
+    }
+    render();
+  }
+});
+render();
+</script>
+</body>
+</html>

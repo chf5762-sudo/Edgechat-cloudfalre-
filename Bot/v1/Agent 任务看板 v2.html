@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Agent 任务看板</title>
+<style>
+:root{color-scheme:light dark;--bg:light-dark(#f6f7f9,#0f1218);--card:light-dark(#fff,#181c25);--tx:light-dark(#1d2330,#e5e7eb);--mut:light-dark(#6b7280,#9ca3af);--bd:light-dark(#e5e7eb,#2a303c);--ok:light-dark(#15803d,#4ade80);--okb:light-dark(#dcfce7,#14301f);--dg:light-dark(#1d4ed8,#93c5fd);--dgb:light-dark(#dbeafe,#172554);--td:light-dark(#4b5563,#d1d5db);--tdb:light-dark(#e5e7eb,#2a303c);--rv:light-dark(#6d28d9,#c4b5fd);--rvb:light-dark(#ede9fe,#2e1f5e);--fo:light-dark(#c2410c,#fdba74);--fob:light-dark(#ffedd5,#3d2410);--un:light-dark(#b91c1c,#fca5a5);--unb:light-dark(#fee2e2,#3b1414);--warnb:light-dark(#fef3c7,#3a2e0b);--orb:light-dark(#ffedd5,#3d2410);box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box}html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.5 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+.wrap{max-width:1360px;margin:0 auto;padding:20px 16px}h1{font-size:20px;margin:0 0 4px}.sub{color:var(--mut);margin-bottom:12px}
+.pub,.box,.stat,.legend,.me{background:var(--card);border:1px solid var(--bd);border-radius:10px}
+.me{padding:8px 12px;margin-bottom:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}.pub{padding:14px;margin-bottom:16px}.pub h2{font-size:14px;margin:0 0 10px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+input,select,textarea{border:1px solid var(--bd);background:var(--bg);color:var(--tx);border-radius:8px;padding:7px 10px;font:inherit}
+.pub input[type=text]{flex:1;min-width:200px}.pub textarea{flex:1;min-width:200px;height:48px}
+button{font:inherit;cursor:pointer}button:disabled{opacity:.5;cursor:not-allowed}
+.go{background:var(--tx);color:var(--bg);border:0;border-radius:8px;padding:8px 18px}.msg{margin-top:8px;font-size:12px;color:var(--mut)}
+.err{display:none;margin-bottom:12px;padding:8px 12px;border-radius:8px;background:var(--unb);color:var(--un)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(105px,1fr));gap:10px;margin-bottom:16px}.stat{padding:10px 12px}.stat b{display:block;font-size:22px}.stat span{color:var(--mut);font-size:12px}
+.bar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
+.chip{border:1px solid var(--bd);background:var(--card);color:var(--tx);padding:4px 11px;border-radius:99px;font-size:13px}.chip.on{background:var(--tx);color:var(--bg);border-color:var(--tx)}
+.box{overflow-x:auto}table{width:100%;border-collapse:collapse;min-width:1400px}
+th{text-align:left;color:var(--mut);font-weight:500;font-size:12px;padding:10px;border-bottom:1px solid var(--bd);white-space:nowrap}td{padding:10px;border-bottom:1px solid var(--bd);vertical-align:top}
+tr:last-child td{border-bottom:0}tr.late td{background:var(--warnb)}tr.od td{background:var(--orb)}tr.chg td{animation:fl 2.5s}@keyframes fl{from{background:var(--dgb)}}
+.id,.mut{color:var(--mut)}.idl{cursor:pointer;text-decoration:underline}.sum{display:block;margin-top:3px;font-size:12px;color:var(--mut)}
+.wn{color:var(--fo);font-size:12px}.un{color:var(--un)}.tx{white-space:pre-wrap}
+.res{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;max-width:220px;word-break:break-all}
+.bot{display:inline-flex;align-items:center;gap:5px;font-weight:500;white-space:nowrap}.av{width:20px;height:20px;border-radius:50%;display:inline-grid;place-items:center;font-size:10px;color:#fff}
+.b{display:inline-block;padding:2px 9px;border-radius:99px;font-size:12px;font-weight:500;white-space:nowrap}
+.s-todo{background:var(--tdb);color:var(--td)}.s-doing{background:var(--dgb);color:var(--dg)}.s-review{background:var(--rvb);color:var(--rv)}.s-pass{background:var(--okb);color:var(--ok)}.s-failed{background:var(--fob);color:var(--fo)}.s-unsolved{background:var(--unb);color:var(--un)}.s-manual{background:var(--unb);color:var(--un);outline:1px solid var(--un)}.s-closed{background:var(--tdb);color:var(--td);text-decoration:line-through}
+.acc input,.acc textarea,.acc select{width:170px;margin-bottom:4px;padding:4px 8px}.acc textarea{height:44px;display:block}
+.ab{border:1px solid var(--bd);border-radius:6px;padding:3px 9px;background:var(--card);color:var(--tx);font-size:12px;margin:0 4px 4px 0;display:inline-block}.ab.ok{color:var(--ok);border-color:var(--ok)}.ab.no{color:var(--un);border-color:var(--un)}
+.tray{display:inline-flex;gap:4px;flex-wrap:wrap;vertical-align:middle}.tw{position:relative}.tw b{position:absolute;right:-4px;top:-6px;background:var(--un);color:#fff;border-radius:50%;width:16px;height:16px;font-size:11px;line-height:16px;text-align:center;cursor:pointer}
+.th{width:44px;height:44px;object-fit:cover;border-radius:6px;border:1px solid var(--bd);cursor:zoom-in;margin:2px 4px 2px 0}.imgs .th{width:64px;height:64px}
+.legend{margin-top:14px;padding:12px 14px;font-size:12px;color:var(--mut)}.legend div{margin:3px 0}
+dialog{background:var(--card);color:var(--tx);border:1px solid var(--bd);border-radius:12px;max-width:860px;width:92%}dialog pre{white-space:pre-wrap;background:var(--bg);padding:8px;border-radius:8px}dialog table{min-width:0}dialog::backdrop{background:#0006}
+@media(max-width:760px){table,tbody,tr,td{display:block;min-width:0}thead{display:none}tr{border-bottom:8px solid var(--bg)}td{border:0;padding:3px 10px}td::before{content:attr(data-label) "：";color:var(--mut);font-size:12px}.res{max-width:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Agent 任务看板</h1>
+<div class="sub">所有任务全员可见；BOT 只能操作派给自己的任务；验收由项目验收 BOT 负责（同时是该项目任务的发布人），验收失败自动发布下一轮，默认最多 3 轮</div>
+<div class="me"><span>当前身份</span><select id="me"></select><span id="tkw" hidden><input type="password" id="tk" placeholder="令牌"> <button class="ab" id="lg">登录</button><button class="ab" id="lo">退出</button></span><span class="mut" id="ro"></span><span style="flex:1"></span><button class="ab" id="lgb">操作日志</button><button class="ab" id="pmb" hidden>项目管理</button><span class="mut" id="rt"></span><button class="ab" id="rf">刷新</button></div>
+<div class="err" id="er"></div>
+<div class="pub" data-ctx="pub"><h2>发布任务</h2>
+<div class="row"><input type="text" id="pt" maxlength="200" placeholder="任务内容，一句话说清楚"><select id="pj"></select><select id="px"></select><span id="pw"></span><select id="pd"><option value="30">时限 30 分钟</option><option value="60" selected>时限 1 小时</option><option value="120">时限 2 小时</option><option value="240">时限 4 小时</option><option value="480">时限 8 小时</option><option value="720">时限 12 小时</option><option value="1440">时限 24 小时</option></select><button class="go" id="pg">发布</button></div>
+<div class="row" style="margin-top:8px"><textarea id="ps" maxlength="1000" placeholder="验收标准（可选）：怎样算做对了？可 Ctrl+V 粘贴截图，或拖入图片"></textarea><span id="pa"></span></div>
+<div class="msg" id="pm"></div></div>
+<div class="stats" id="stats"></div><div class="bar" id="bar"></div>
+<div class="bar"><input type="search" id="qs" placeholder="搜索任务 / 结果 / #编号"><select id="bf"></select></div>
+<div class="box"><table><thead><tr><th>#</th><th>项目</th><th>任务</th><th>指派给</th><th>验收 BOT</th><th>状态</th><th>轮次</th><th>发布人</th><th>发布时间</th><th>截止</th><th>完成时间</th><th>结果</th><th>验收 / 操作</th></tr></thead><tbody id="rows"></tbody></table></div>
+<div class="legend"><div><b>状态说明</b>（黄色行 = 超时；橙色行 = 待验收或待领取超过 24 小时，仅提醒）</div>
+<div>待领取：已发布，被指派 BOT 尚未认领　|　进行中：BOT 已认领，时限从认领时开始计算</div>
+<div>待验收：BOT 已提交结果，等待本项目验收 BOT 验收　|　验收成功：终态，结案</div>
+<div>验收失败：自动汇总并发布下一轮任务，轮次 +1，验收标准和图片一并带入下一轮</div>
+<div>未解决：BOT 报告失败，或超时未提交结果（系统自动转入）；管理员可放回待领取或改派</div>
+<div>需人工处理：达到最大轮次（3）仍验收失败，管理员三选一：再开一轮（轮次重置）/ 改派 / 关闭</div>
+<div>已关闭：管理员终止任务（终态）；管理员可在详情里强制关闭未结束的任务，或为进行中的任务延期</div>
+<div>放回待领取 / 改派 / 再开一轮 / 关闭 / 强制关闭 / 延期需填写原因，记入时间线，不可撤销</div>
+<div>图片：Ctrl+V 粘贴、拖拽或点「📎 图片」选择；PNG / JPEG / WebP / GIF，单张 ≤5MB，每次最多 9 张</div>
+<div>时间均为北京时间（UTC+8），非当天显示「月-日 时:分」；页面每 5 秒自动刷新</div></div>
+</div>
+<dialog id="dl"><div id="dlb"></div><div style="text-align:right"><button class="ab" data-close="dl">关闭窗口</button></div></dialog>
+<dialog id="pjd"><div id="pjb"></div><div style="text-align:right"><button class="ab" data-close="pjd">关闭窗口</button></div></dialog>
+<dialog id="ld"><h3>操作日志</h3><div class="row"><input id="la" placeholder="操作人"><select id="lc"></select><button class="ab" id="lcsv">导出 CSV</button></div><textarea id="csv" hidden readonly style="width:100%;height:70px;margin-top:6px"></textarea><div style="overflow:auto;max-height:55vh"><table><tbody id="lrows"></tbody></table></div><div style="text-align:right"><button class="ab" data-close="ld">关闭窗口</button></div></dialog>
+<dialog id="cf"><h3 id="cft"></h3><textarea id="cfw" maxlength="500" style="width:100%;height:70px" placeholder="操作原因（必填，记入时间线）"></textarea><div class="un" id="cfe"></div><div style="text-align:right;margin-top:8px"><button class="ab" id="cfn">取消</button><button class="go" id="cfo">确认</button></div></dialog>
+<dialog id="lb"><div style="text-align:center"><img id="lbi" alt="" style="max-width:100%;max-height:68vh"></div><div style="text-align:center;margin-top:8px"><button class="ab" id="lp">←</button><span id="lcn"></span><button class="ab" id="ln">→</button><button class="ab" data-close="lb">关闭</button></div></dialog>
+<script>
+"use strict";
+var $=function(i){return document.getElementById(i)},REAL=false/* 部署到真实后端时改为 true（同源请求，令牌存会话） */,SKEW=0,TK="";
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
+function lk(s){return esc(s).replace(/https?:\/\/[^\s<]+/g,function(u){return'<a href="'+u+'" target="_blank" rel="noopener noreferrer">'+u+'</a>'})}
+var COL={"写码BOT":"#2563eb","文档BOT":"#9333ea","数据BOT":"#0d9488","排课验收BOT":"#d97706","数据验收BOT":"#be185d","文档验收BOT":"#4f46e5","管理员":"#475569","测试BOT":"#0891b2","报表BOT":"#65a30d","写作BOT":"#c026d3"};
+var BOTS=Object.keys(COL).filter(function(n){return n!=="管理员"}).map(function(n){return{name:n,role:/验收BOT$/.test(n)?"acceptor":"executor",color:COL[n]}});
+var ST={todo:"待领取",doing:"进行中",review:"待验收",pass:"✔ 验收成功",failed:"✖ 验收失败",unsolved:"未解决",manual:"⛔ 需人工处理",closed:"已关闭"};
+var AL={publish:"发布",claim:"认领",complete:"提交完成",fail:"报告失败",timeout:"超时",accept:"验收",requeue:"放回待领取",reassign:"改派",reopen:"再开一轮",close:"关闭",force_close:"强制关闭",extend:"延期",note:"留言"};
+var TMO="超时未提交结果（系统自动转入）",MAX=3;
+/* 时间 */
+function now(){return Date.now()+SKEW}
+function P(i){var o={};new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Shanghai",hourCycle:"h23",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit"}).formatToParts(new Date(i)).forEach(function(x){o[x.type]=x.value});return o}
+function ft(i){if(!i)return"-";var a=P(i),b=P(now()),hm=a.hour+":"+a.minute;return(a.day===b.day&&a.month===b.month&&a.year===b.year)?hm:a.month+"-"+a.day+" "+hm}
+function full(i){if(!i)return"-";var a=P(i);return a.year+"-"+a.month+"-"+a.day+" "+a.hour+":"+a.minute+":"+a.second}
+function dl(t){if(t.status==="todo")return'<span class="sum">认领后 '+(+t.deadline_minutes)+' 分钟内完成</span>';var h=ft(t.deadline_at);if(t.status!=="doing")return h;var m=Math.round((Date.parse(t.deadline_at)-now())/6e4);return h+'<span class="sum'+(m<10?" un":"")+'">'+(m>=0?"剩 "+(m>=60?Math.floor(m/60)+" 小时 "+m%60+" 分":m+" 分"):"已超 "+(-m)+" 分")+'</span>'}
+/* ───── 演示后端（规则与 PRD 一致；REAL=true 时不使用） ───── */
+var PJ=[{name:"排课系统",acceptor:"排课验收BOT",executors:["写码BOT","测试BOT"]},{name:"数据报表",acceptor:"数据验收BOT",executors:["数据BOT","报表BOT"]},{name:"文档库",acceptor:"文档验收BOT",executors:["文档BOT","写作BOT"]}];
+var T=[],NEXT=40,ME="管理员",IM={},NI=1,WHY=["requeue","reassign","reopen","close","force-close","extend"];
+var AC={todo:["claim","force_close"],doing:["complete","fail","timeout","extend","force_close"],review:["accept_pass","accept_fail","force_close"],unsolved:["requeue","reassign","force_close"],manual:["reopen","reassign","close"],pass:[],failed:[],closed:[]};
+var ALLS=Object.keys(AC),PRE={claim:["todo"],complete:["doing"],fail:["doing"],"simulate-timeout":["doing"],accept:["review"],requeue:["unsolved"],reassign:["unsolved","manual"],reopen:["manual"],close:["manual"],"force-close":["todo","doing","review","unsolved"],extend:["doing"],note:ALLS};
+function iso(n){return new Date(n).toISOString()}function ago(m){return iso(Date.now()-m*6e4)}
+function pj(n){return PJ.filter(function(p){return p.name===n})[0]}
+function role(n){return n==="管理员"?"admin":n==="观察者"?"observer":(BOTS.filter(function(b){return b.name===n})[0]||{role:"executor"}).role}
+function R(s,d){return{status:s,data:d}}function E(s,e,m){return R(s,{error:e,message:m||e})}
+function nt(o){var p=pj(o.project);return Object.assign({id:NEXT++,status:"todo",late:false,round:1,max_rounds:MAX,claimed_at:null,deadline_minutes:60,deadline_at:null,done_at:null,result:"-",report:"",summary:"",std:"",imgs:[],parent_id:null,accept_note:"",accepted_by:null,accepted_at:null,reopened:false,events:[],acceptor:p.acceptor,assignee:p.executors[0],publisher:p.acceptor,created_at:iso(Date.now())},o)}
+function ev(t,a,f,to,who,d,im){t.events.push({at:iso(Date.now()),actor:who,act:a,from:f,to:to,detail:d||"",imgs:im||[]})}
+function up2(d){var id="i"+NI++;IM[id]=d;return id}
+function shot(){var c=document.createElement("canvas");c.width=360;c.height=110;var g=c.getContext("2d");g.fillStyle="#1e1e1e";g.fillRect(0,0,360,110);g.fillStyle="#f87171";g.font="14px monospace";g.fillText("Error: teacher_id mismatch",14,40);g.fillStyle="#d4d4d4";g.fillText("at schedule.js:128 (周日 18:00)",14,70);return up2(c.toDataURL("image/png"))}
+function sd(o,evs){var t=nt(o);T.push(t);t.events.push({at:t.created_at,actor:t.publisher,act:"publish",from:"",to:"todo",detail:"",imgs:[]});(evs||[]).forEach(function(e){t.events.push(Object.assign({at:ago(1),imgs:[]},e))})}
+(function seed(){var s1=shot(),ac="排课验收BOT";
+ sd({id:11,project:"文档库",title:"整理上周会议纪要",created_at:ago(5)});
+ sd({id:12,project:"排课系统",title:"核对周日固定课教师名单",status:"doing",created_at:ago(20),claimed_at:ago(18),deadline_at:ago(-42),result:"处理中",std:"名单与教务系统一致，差异项逐条列出"},[{actor:"写码BOT",act:"claim",from:"todo",to:"doing"}]);
+ sd({id:13,project:"文档库",title:"整理本周会议纪要",status:"review",created_at:ago(40),done_at:ago(8),result:"已整理并归档 https://example.com/minutes"});
+ sd({id:14,project:"数据报表",title:"同步校区课表到报表库",status:"review",created_at:ago(1700),done_at:ago(1560),result:"已同步 12 个校区"});
+ sd({id:15,project:"数据报表",title:"导出本月退费明细",status:"unsolved",late:true,assignee:"报表BOT",created_at:ago(180),claimed_at:ago(170),deadline_at:ago(110),done_at:ago(110),result:TMO},[{actor:"管理员",act:"reassign",from:"unsolved",to:"todo",detail:"数据BOT → 报表BOT；原因：原 BOT 长期无响应"},{actor:"系统",act:"timeout",from:"doing",to:"unsolved"}]);
+ sd({id:16,project:"文档库",title:"把昨天的bug报告改成Word版",status:"pass",created_at:ago(300),done_at:ago(250),result:"Word版已生成并归档",accepted_by:"文档验收BOT"});
+ sd({id:21,project:"排课系统",title:"排课系统周日18点固定课挂错老师，查一下",status:"failed",round:1,created_at:ago(500),done_at:ago(470),result:"已补充周六修复",accept_note:"缺少单元测试"},[{actor:ac,act:"accept",from:"review",to:"failed",detail:"失败：缺少单元测试"}]);
+ sd({id:22,project:"排课系统",title:"排课系统周日18点固定课挂错老师，查一下",status:"failed",round:2,parent_id:21,created_at:ago(450),done_at:ago(420),result:"已补单测",accept_note:"用例未覆盖跨周场景",imgs:[s1]},[{actor:ac,act:"accept",from:"review",to:"failed",detail:"失败：用例未覆盖跨周场景",imgs:[s1]}]);
+ sd({id:17,project:"排课系统",title:"排课系统周日18点固定课挂错老师，查一下",status:"manual",round:3,parent_id:22,created_at:ago(400),done_at:ago(360),result:"已补单测，覆盖不足",accept_note:"跨周仍报错，见截图",imgs:[s1],summary:"自动汇总：原任务 + 上轮结果「已补单测」+ 失败原因「用例未覆盖跨周场景」"},[{actor:ac,act:"accept",from:"review",to:"manual",detail:"失败：跨周仍报错，见截图",imgs:[s1]}]);
+ sd({id:18,project:"数据报表",title:"导出本月消课流水表",status:"failed",created_at:ago(500),done_at:ago(470),result:"已导出",accept_note:"缺少金额列"});
+ sd({id:19,project:"排课系统",title:"补录下周代课记录",created_at:ago(1800)})})();
+function od(t){var n=Date.now();return t.status==="review"&&n-Date.parse(t.done_at)>864e5||t.status==="todo"&&n-Date.parse(t.created_at)>864e5}
+function mine(t){var r=role(ME),s=t.status;return r==="admin"?(s==="unsolved"||s==="manual"||od(t)):r==="executor"?(t.assignee===ME&&(s==="todo"||s==="doing")):r==="acceptor"?(t.acceptor===ME&&ME!==t.assignee&&s==="review"):false}
+function sweep(){var n=Date.now();T.forEach(function(t){if(t.status==="doing"&&Date.parse(t.deadline_at)<n){ev(t,"timeout","doing","unsolved","系统");t.status="unsolved";t.late=true;t.done_at=t.deadline_at;t.result=TMO}})}
+function acc(t){var n=t.accept_note,s=t.status;return s==="review"?"待验收":s==="pass"?"✔ 通过 · 第 "+t.round+" 轮结案":s==="failed"?"✖ 失败："+n+(t.reopened?"；已达 "+MAX+" 轮上限，等待管理员审批；管理员批准再开一轮":""):s==="manual"?"✖ 失败："+n+"；已达 "+MAX+" 轮上限，等待管理员审批":s==="closed"?"管理员已关闭":"-"}
+function can(a,t){var r=role(ME);if(/^(claim|complete|fail)$/.test(a))return ME===t.assignee;if(/^accept/.test(a))return ME===t.acceptor&&ME!==t.assignee;if(a==="note")return r!=="observer";return r==="admin"}
+function view(t,fl){var o=Object.assign({},t);delete o.events;o.acc_text=acc(t);o.actions=AC[t.status].slice();o.my_actions=o.actions.concat("note").filter(function(a){return can(a,t)});o.od=od(t);o.reassigns=t.events.filter(function(e){return e.act==="reassign"}).length;if(fl)o.events=t.events;return o}
+function kid(t,sum,round,now,im){var k=nt({project:t.project,title:t.title,assignee:t.assignee,publisher:t.acceptor,round:round,created_at:now,deadline_minutes:t.deadline_minutes,summary:sum,std:t.std,imgs:im,parent_id:t.id});T.push(k);ev(k,"publish","","todo","系统","由 #"+t.id+" 自动发布第 "+round+" 轮")}
+function reset(t){t.status="todo";t.late=false;t.done_at=null;t.claimed_at=null;t.deadline_at=null}
+function act(a,t,b){
+ var nw=iso(Date.now()),f=t.status,ex=pj(t.project).executors,d="",im=b.images||[];
+ if(!can(a,t))return E(403,"FORBIDDEN","无权执行该操作");
+ if(im.length>9)return E(400,"BAD_REQUEST","每次最多 9 张图片");
+ if(a==="accept"){if(b.result!=="pass"&&b.result!=="fail")return E(400,"BAD_REQUEST","result 必须是 pass 或 fail");if(b.result==="fail"&&!String(b.note||"").trim())return E(400,"BAD_REQUEST","验收失败必须填写原因")}
+ if(WHY.indexOf(a)>=0&&!String(b.why||"").trim())return E(400,"BAD_REQUEST","请填写操作原因");
+ if(a==="extend"&&[30,60,120].indexOf(+b.minutes)<0)return E(400,"BAD_REQUEST","延期只能 30 / 60 / 120 分钟");
+ if(a==="reassign"&&b.to&&(ex.indexOf(b.to)<0||b.to===t.assignee))return E(400,"BAD_REQUEST","改派目标非法");
+ if(PRE[a].indexOf(f)<0)return E(409,"INVALID_STATE","当前状态不允许该操作");
+ if(a==="note"){d=String(b.text||"").trim();if(!d&&!im.length)return E(400,"BAD_REQUEST","请填写留言或附图")}
+ else if(a==="claim"){t.status="doing";t.claimed_at=nw;t.deadline_at=iso(Date.now()+t.deadline_minutes*6e4);t.result="处理中"}
+ else if(a==="complete"){t.status="review";t.done_at=nw;t.result=String(b.result||"").trim()||"已完成";t.report=String(b.report||"").slice(0,5000);d=t.result}
+ else if(a==="fail"){d=String(b.reason||"").trim()||"未说明原因";t.status="unsolved";t.late=false;t.done_at=nw;t.result="未解决："+d}
+ else if(a==="simulate-timeout"){t.status="unsolved";t.late=true;t.done_at=nw;t.result=TMO}
+ else if(a==="accept"){t.accepted_by=ME;t.accepted_at=nw;if(b.result==="pass"){t.status="pass";d="通过"}else{t.accept_note=String(b.note).trim();d="失败："+t.accept_note;if(t.round>=t.max_rounds)t.status="manual";else{t.status="failed";kid(t,"自动汇总：原任务 + 上轮结果「"+t.result+"」+ 失败原因「"+t.accept_note+"」",t.round+1,nw,t.imgs.concat(im))}}}
+ else if(a==="requeue"){reset(t);t.result="-"}
+ else if(a==="reassign"){var old=t.assignee;t.assignee=b.to||ex[(ex.indexOf(old)+1)%ex.length];reset(t);t.result="已改派（原：「"+old+"」）";d=old+" → "+t.assignee}
+ else if(a==="reopen"){t.status="failed";t.reopened=true;kid(t,"自动汇总：管理员批准再开一轮（轮次重置）+ 上轮结果「"+t.result+"」",1,nw,t.imgs)}
+ else if(a==="close"||a==="force-close")t.status="closed";
+ else if(a==="extend"){t.deadline_at=iso(Date.parse(t.deadline_at)+b.minutes*6e4);d="+"+b.minutes+" 分钟"}
+ if(b.why)d=(d?d+"；":"")+"原因："+String(b.why).trim();
+ ev(t,a==="force-close"?"force_close":a==="simulate-timeout"?"timeout":a,f,t.status,ME,d,im);return R(200,view(t))}
+function mock(m,p,b){
+ b=b||{};var u=p.split("?"),path=u[0],q=new URLSearchParams(u[1]||""),rl=role(ME);sweep();
+ if(path==="/api/me")return R(200,{name:ME,role:rl,now:iso(Date.now())});
+ if(path==="/api/uploads"&&m==="POST"){if(rl==="observer")return E(403,"FORBIDDEN");var dd=String(b.data||"");if(!/^data:image\/(png|jpeg|webp|gif);base64,/.test(dd)||dd.length*.75>5242880)return E(400,"BAD_REQUEST","仅支持 PNG / JPEG / WebP / GIF，单张不超过 5MB");return R(201,{id:up2(dd)})}
+ var g=path.match(/^\/api\/uploads\/(\w+)$/);if(g)return IM[g[1]]?R(200,{url:IM[g[1]]}):E(404,"NOT_FOUND");
+ if(path==="/api/events"){var L=[];T.forEach(function(t){t.events.forEach(function(e){L.push(Object.assign({task:t.id,title:t.title},e))})});L.sort(function(a,c){return Date.parse(c.at)-Date.parse(a.at)});return R(200,L)}
+ if(path==="/api/projects"){if(m==="GET")return R(200,{projects:PJ,bots:BOTS});
+  if(rl!=="admin")return E(403,"FORBIDDEN");var ee=b.executors||[];
+  if(!String(b.name||"").trim()||pj(b.name)||!ee.length||ee.indexOf(b.acceptor)>=0||role(b.acceptor)!=="acceptor"||ee.some(function(n){return role(n)!=="executor"}))return E(400,"BAD_REQUEST","项目参数非法");
+  var np={name:b.name.trim(),acceptor:b.acceptor,executors:ee};PJ.push(np);return R(201,np)}
+ if(path==="/api/stats"){var s={all:T.length,late:0,mine:0,bots:{}};ALLS.forEach(function(k){s[k]=0});T.forEach(function(t){s[t.status]++;if(t.late)s.late++;if(mine(t))s.mine++;if(t.status==="todo"||t.status==="doing")s.bots[t.assignee]=(s.bots[t.assignee]||0)+1});return R(200,s)}
+ if(path==="/api/tasks"&&m==="POST"){var p1=pj(b.project),dm=b.deadline_minutes==null?60:b.deadline_minutes;
+  if(rl==="observer"||rl==="executor"||(rl==="acceptor"&&p1&&p1.acceptor!==ME))return E(403,"FORBIDDEN","无权发布");
+  if(!String(b.title||"").trim()||!p1||p1.executors.indexOf(b.assignee)<0||[30,60,120,240,480,720,1440].indexOf(dm)<0)return E(400,"BAD_REQUEST","参数非法");
+  if((b.images||[]).length>9)return E(400,"BAD_REQUEST","每次最多 9 张图片");
+  var t=nt({project:b.project,title:b.title.trim(),assignee:b.assignee,publisher:ME,deadline_minutes:dm,std:String(b.std||"").slice(0,1000),imgs:b.images||[]});T.push(t);ev(t,"publish","","todo",ME,"",b.images);return R(201,view(t))}
+ if(path==="/api/tasks"){
+  if(q.get("chain")){var c=T.filter(function(t){return t.id==q.get("chain")})[0],ids=new Set(),n;while(c){ids.add(c.id);c=T.filter(function(t){return t.id===c.parent_id})[0]}do{n=ids.size;T.forEach(function(t){if(ids.has(t.parent_id))ids.add(t.id)})}while(ids.size>n);return R(200,T.filter(function(t){return ids.has(t.id)}).sort(function(a,c){return a.id-c.id}).map(function(t){return view(t)}))}
+  var k=(q.get("q")||"").toLowerCase(),L2=T.filter(function(t){return(!q.get("status")||t.status===q.get("status"))&&(!q.get("late")||t.late)&&(!q.get("project")||t.project===q.get("project"))&&(!q.get("bot")||t.assignee===q.get("bot")||t.acceptor===q.get("bot"))&&(!q.get("mine")||mine(t))&&(!k||("#"+t.id+" "+t.title+" "+t.result+" "+t.summary).toLowerCase().indexOf(k)>=0)});
+  L2.sort(function(a,c){return Date.parse(c.created_at)-Date.parse(a.created_at)||c.id-a.id});return R(200,L2.map(function(t){return view(t)}))}
+ var x=path.match(/^\/api\/tasks\/(\d+)(?:\/([\w-]+))?$/);
+ if(x){var tk=T.filter(function(t){return t.id==x[1]})[0];if(!tk)return E(404,"NOT_FOUND","任务不存在");if(!x[2])return R(200,view(tk,1));if(m!=="POST"||!PRE[x[2]])return E(404,"NOT_FOUND");if(rl==="observer")return E(403,"FORBIDDEN","观察者只读");return act(x[2],tk,b)}
+ return E(404,"NOT_FOUND")}
+/* ───── 接口层 ───── */
+function call(m,p,b){
+ if(!REAL)return new Promise(function(r){setTimeout(function(){r(mock(m,p,b))},0)});
+ return fetch(p,{method:m,headers:{"Content-Type":"application/json",Authorization:"Bearer "+TK},body:b?JSON.stringify(b):undefined}).then(function(r){return r.json().catch(function(){return null}).then(function(d){return{status:r.status,data:d}})})}
+function chk(r){if(r.status>=400){var e=new Error((r.data&&r.data.message)||("HTTP "+r.status));e.status=r.status;throw e}return r.data}
+/* ───── 图片 ───── */
+var AT={};
+function att(c){return'<label class="ab">📎 图片<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden data-c="'+c+'"></label><span class="tray" data-tray="'+c+'"></span>'}
+function tray(c){var h=(AT[c]||[]).map(function(u,i){return'<span class="tw"><img class="th" alt="" src="'+esc(u)+'"><b data-rm="'+c+'" data-i="'+i+'">×</b></span>'}).join("");document.querySelectorAll('[data-tray="'+c+'"]').forEach(function(n){n.innerHTML=h})}
+function shrink(f){return new Promise(function(ok,no){var r=new FileReader();r.onerror=no;r.onload=function(){if(f.size<3e5||f.type==="image/gif")return ok(r.result);var im=new Image();im.onerror=no;im.onload=function(){var k=Math.min(1,2000/Math.max(im.width,im.height)),c=document.createElement("canvas");c.width=im.width*k;c.height=im.height*k;c.getContext("2d").drawImage(im,0,0,c.width,c.height);ok(c.toDataURL("image/jpeg",.85))};im.src=r.result};r.readAsDataURL(f)})}
+async function addF(c,fs){var a=AT[c]=AT[c]||[];for(var i=0;i<fs.length;i++){var f=fs[i];if(!/^image\/(png|jpeg|webp|gif)$/.test(f.type)){note("仅支持 PNG / JPEG / WebP / GIF 图片");continue}if(a.length>=9){note("每次最多 9 张图片");break}try{a.push(await shrink(f))}catch(e){note("图片读取失败")}}tray(c)}
+async function up(c){var a=AT[c]||[],ids=[];for(var i=0;i<a.length;i++)ids.push(chk(await call("POST","/api/uploads",{data:a[i]})).id);AT[c]=[];tray(c);return ids}
+function ctxOf(el){var n=el&&el.closest&&el.closest("[data-ctx]");return n&&n.dataset.ctx}
+document.addEventListener("paste",function(e){var c=ctxOf(e.target);if(!c)return;var fs=[].filter.call(e.clipboardData.files||[],function(f){return/^image\//.test(f.type)});if(fs.length){e.preventDefault();addF(c,fs)}});
+document.addEventListener("dragover",function(e){if(ctxOf(e.target))e.preventDefault()});
+document.addEventListener("drop",function(e){var c=ctxOf(e.target);if(c&&e.dataTransfer.files.length){e.preventDefault();addF(c,e.dataTransfer.files)}});
+document.addEventListener("change",function(e){var el=e.target;if(el.dataset&&el.dataset.c){addF(el.dataset.c,el.files);el.value=""}});
+var LB=[],LI=0;
+function lbShow(){$("lbi").src=LB[LI];$("lcn").textContent=" "+(LI+1)+" / "+LB.length+" "}
+function imgs(ids){return ids&&ids.length?'<div class="imgs">'+ids.map(function(i){return'<img class="th" alt="" data-u="'+esc(i)+'">'}).join("")+'</div>':""}
+function loadImgs(){document.querySelectorAll("img[data-u]").forEach(async function(i){try{i.src=chk(await call("GET","/api/uploads/"+i.dataset.u)).url}catch(e){i.alt="图片加载失败"}})}
+/* ───── 视图 ───── */
+var F="all",QS="",BF="",D=[],S={},PRJ=[],BL=BOTS,LOAD=1,RL="admin",CUR=0,RQ=0,SIG={},CHG={},LOGS=[],LV=[],CFR=null;
+function bot(n){return'<span class="bot"><span class="av" style="background:'+esc(COL[n]||"#64748b")+'">'+esc(n[0])+'</span>'+esc(n)+'</span>'}
+function note(t,retry){var e=$("er");if(!t){e.style.display="none";return}e.style.display="block";e.innerHTML=esc(t)+(retry?' <button class="ab" id="rty">重试</button>':"")}
+function ops(t){
+ var m=t.my_actions||[],has=function(a){return m.indexOf(a)>=0},c='data-ctx="t'+t.id+'"';
+ function B(a,l,k){return'<button class="ab '+(k||"")+'" data-a="'+a+'" data-id="'+t.id+'">'+l+'</button>'}
+ function inp(ph){return'<input id="n'+t.id+'" maxlength="500" placeholder="'+ph+'"><br>'}
+ var ex=((PRJ.filter(function(p){return p.name===t.project})[0])||{executors:[]}).executors.filter(function(n){return n!==t.assignee});
+ function sel(){return'<select id="to'+t.id+'"><option value="">轮换到下一个 BOT</option>'+ex.map(function(n){return'<option>'+esc(n)+'</option>'}).join("")+'</select><br>'}
+ var s=t.status,none=' <span class="mut">—</span>',w=t.od?'<div class="wn">'+(s==="review"?"验收逾期":"待领取超 24 小时")+'</div>':"";
+ if(s==="todo")return'<div class="mut">执行BOT：</div>'+w+(has("claim")?B("claim","认领"):none);
+ if(s==="doing")return'<div class="acc" '+c+'><div class="mut">执行BOT / 系统：</div>'+(has("complete")?inp("结果摘要 / 失败原因")+'<textarea id="r'+t.id+'" maxlength="5000" placeholder="报告（可选，纯文本）"></textarea>'+att("t"+t.id)+'<br>'+B("done","提交完成","ok")+B("bad","报告失败","no"):"")+(has("timeout")?B("tmo","⏱模拟超时"):"")+(m.indexOf("complete")<0&&m.indexOf("timeout")<0?none:"")+'</div>';
+ if(s==="review")return'<div class="acc" '+c+'><div class="mut">验收BOT：</div>'+w+(has("accept_pass")?inp("失败原因（失败时必填）")+att("t"+t.id)+'<br>'+B("pass","验收成功","ok")+B("fail","验收失败","no"):none)+'</div>';
+ if(s==="unsolved")return'<div class="acc"><div class="mut">管理员：</div>'+(has("requeue")?B("retry","放回待领取")+sel()+B("reassign","改派"):none)+'</div>';
+ if(s==="manual")return'<div class="acc"><div class="mut">管理员审批：'+esc(t.acc_text)+'</div>'+(has("reopen")?B("round","再开一轮","ok")+sel()+B("reassign","改派")+B("close","关闭","no"):"")+'</div>';
+ return esc(t.acc_text)}
+function row(t){
+ var n=t.images_n,cl=(t.late?"late":t.od?"od":"")+(CHG[t.id]?" chg":"");
+ return'<tr class="'+cl+'"><td class="id" data-label="编号"><span class="idl" data-d="'+t.id+'">#'+t.id+'</span></td><td data-label="项目">'+esc(t.project)+'</td><td data-label="任务">'+esc(t.title)+((t.imgs||[]).length?' <span class="mut">📎'+t.imgs.length+'</span>':"")+(t.summary?'<span class="sum">'+esc(t.summary)+'</span>':"")+'</td><td data-label="指派给">'+bot(t.assignee)+'</td><td data-label="验收 BOT">'+bot(t.acceptor)+'</td><td data-label="状态"><span class="b s-'+esc(t.status)+'">'+ST[t.status]+'</span></td><td data-label="轮次">第 '+(+t.round)+' / '+(+t.max_rounds)+' 轮</td><td data-label="发布人">'+esc(t.publisher)+'</td><td class="mut" data-label="发布时间" title="'+full(t.created_at)+'">'+ft(t.created_at)+'</td><td class="mut" data-label="截止" title="'+full(t.deadline_at)+'">'+dl(t)+'</td><td class="mut" data-label="完成时间" title="'+full(t.done_at)+'">'+ft(t.done_at)+'</td><td data-label="结果"><div class="res" title="'+esc(t.result)+'">'+esc(t.result)+'</div></td><td data-label="操作">'+ops(t)+'</td></tr>'}
+var CH=[["全部","all"],["待领取","todo"],["进行中","doing"],["待验收","review"],["验收成功","pass"],["验收失败","failed"],["未解决","unsolved"],["需人工处理","manual"],["已关闭","closed"],["超时","late"]];
+function render(){
+ $("stats").innerHTML=CH.map(function(s){return'<div class="stat"><b>'+(S[s[1]]==null?0:S[s[1]])+'</b><span>'+s[0]+'</span></div>'}).join("");
+ $("bar").innerHTML='<button class="chip'+(F==="mine"?" on":"")+'" data-f="mine">待我处理'+(S.mine?"（"+S.mine+"）":"")+'</button>'+CH.map(function(s){return'<button class="chip'+(F===s[1]?" on":"")+'" data-f="'+s[1]+'">'+s[0]+'</button>'}).join("")+'<span style="flex:1"></span>'+PRJ.map(function(p){return'<button class="chip'+(F==="p:"+p.name?" on":"")+'" data-f="p:'+esc(p.name)+'">'+esc(p.name)+'</button>'}).join("");
+ if(!LOAD){CHG={};var ns={};D.forEach(function(t){var s=t.status+"|"+t.round+"|"+t.assignee+"|"+t.result;ns[t.id]=s;if(SIG[t.id]!==undefined&&SIG[t.id]!==s)CHG[t.id]=1});SIG=ns}
+ $("rows").innerHTML=LOAD?'<tr><td colspan="13" class="mut">加载中…</td></tr>':D.length?D.map(row).join(""):'<tr><td colspan="13" class="mut">暂无任务</td></tr>'}
+function busy(){var a=document.activeElement;return(a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName)&&$("rows").contains(a))||Object.keys(AT).some(function(k){return k[0]==="t"&&AT[k].length})}
+async function refresh(silent){
+ if(!silent){LOAD=1;render()}
+ var qs="?"+(F==="late"?"late=1":F==="mine"?"mine=1":F.indexOf("p:")===0?"project="+encodeURIComponent(F.slice(2)):F!=="all"?"status="+F:"x=1")+(BF?"&bot="+encodeURIComponent(BF):"")+(QS?"&q="+encodeURIComponent(QS):"");
+ try{var r=await Promise.all([call("GET","/api/tasks"+qs),call("GET","/api/stats"),call("GET","/api/projects")]);D=chk(r[0]);S=chk(r[1]);var pr=chk(r[2]);PRJ=pr.projects;BL=pr.bots;fillBF();fillPub();note("");document.title=(S.mine?"("+S.mine+") ":"")+"Agent 任务看板";var n=P(now());$("rt").textContent="上次刷新 "+n.hour+":"+n.minute+":"+n.second}
+ catch(e){if(e.status===401)note("请先登录（令牌无效或已过期）");else note("请求失败："+e.message,1)}
+ LOAD=0;render()}
+function fillBF(){var o=$("bf").value;$("bf").innerHTML='<option value="">全部 BOT</option>'+BL.map(function(b){var n=(S.bots||{})[b.name];return'<option value="'+esc(b.name)+'">'+esc(b.name)+(n?"（"+n+" 待办）":"")+'</option>'}).join("");$("bf").value=o}
+async function who(){try{var r=chk(await call("GET","/api/me"));ME=r.name;RL=r.role;if(r.now)SKEW=Date.parse(r.now)-Date.now()}catch(e){RL="observer";if(e.status!==401)note("请求失败："+e.message,1)}
+ var tx={admin:"管理员：可发布、改派、再开一轮、关闭、强制关闭、延期、登记项目",acceptor:"验收 BOT：可发布并验收本项目任务",executor:"执行 BOT：只能操作派给自己的任务",observer:"观察者：只读（可查看全部，不可留言）"};
+ $("ro").textContent=tx[RL]||"";$("pmb").hidden=RL!=="admin";fillPub()}
+function fillPub(){
+ var ps=PRJ.filter(function(p){return RL==="admin"||(RL==="acceptor"&&p.acceptor===ME)});
+ var old=$("pj").value;$("pj").innerHTML=ps.map(function(p){return'<option>'+esc(p.name)+'</option>'}).join("");if(ps.some(function(p){return p.name===old}))$("pj").value=old;
+ var p=ps.filter(function(x){return x.name===$("pj").value})[0],ox=$("px").value;
+ $("px").innerHTML=p?p.executors.map(function(n){return'<option>'+esc(n)+'</option>'}).join(""):"";if(p&&p.executors.indexOf(ox)>=0)$("px").value=ox;
+ $("pw").textContent="发布人："+ME;
+ $("pm").textContent=p?"验收 BOT：「"+p.acceptor+"」（项目验收人，不能验收自己执行的任务）；发布后状态为「待领取」":"当前身份无发布权限";$("pg").disabled=!p}
+function detail(t,ch){
+ var my=t.my_actions||[],has=function(a){return my.indexOf(a)>=0},rs=t.reassigns||0,id=t.id;
+ return'<h3>#'+id+' '+esc(t.title)+'</h3><p>'+esc(t.project)+' · '+ST[t.status]+' · 第 '+(+t.round)+' / '+(+t.max_rounds)+' 轮'+(t.late?" · 超时":"")+(t.od?' · <b class="wn">'+(t.status==="review"?"验收逾期":"待领取超 24 小时")+'</b>':"")+(rs?' · <b class="'+(rs>=3?"un":"mut")+'">改派 '+rs+' 次'+(rs>=3?"，建议人工介入":"")+'</b>':"")+'</p>'
+ +(ch.length>1?'<p>任务链：'+ch.map(function(c){return'<span class="idl" data-d="'+c.id+'">#'+c.id+(c.id===id?"（当前）":"")+" 第"+(+c.round)+"轮 "+ST[c.status]+'</span>'}).join(" → ")+'</p>':"")
+ +'<p>指派给：'+esc(t.assignee)+'　验收：'+esc(t.acceptor)+'　发布人：'+esc(t.publisher)+'</p><p class="mut">发布 '+full(t.created_at)+'　领取 '+full(t.claimed_at)+'　截止 '+full(t.deadline_at)+'　完成 '+full(t.done_at)+'</p>'
+ +(t.std?'<h4>验收标准</h4><div class="tx">'+lk(t.std)+'</div>':"")+imgs(t.imgs)
+ +'<p>结果：'+lk(t.result)+'</p>'+(t.summary?'<p>'+esc(t.summary)+'</p>':"")+'<h4>报告</h4><pre>'+lk(t.report||"（无报告）")+'</pre>'
+ +'<h4>时间线</h4><div style="overflow:auto"><table><thead><tr><th>时间</th><th>操作人</th><th>动作</th><th>状态变化</th><th>说明</th></tr></thead><tbody>'+(t.events||[]).map(function(e){return'<tr><td>'+full(e.at)+'</td><td>'+esc(e.actor)+(e.actor==="管理员"?" 👤":e.actor==="系统"?" ⚙":" 🤖")+'</td><td>'+esc(AL[e.act]||e.act)+'</td><td>'+(e.from&&e.from!==e.to?ST[e.from]+" → ":"")+ST[e.to]+'</td><td>'+lk(e.detail)+imgs(e.imgs)+'</td></tr>'}).join("")+'</tbody></table></div>'
+ +(has("note")?'<h4>留言</h4><div data-ctx="d"><textarea id="dn'+id+'" maxlength="1000" style="width:100%" placeholder="留言（可 Ctrl+V 粘贴截图）"></textarea>'+att("d")+' <button class="ab" data-a="note" data-id="'+id+'">发送留言</button></div>':"")
+ +'<p><button class="ab" data-a="copy" data-id="'+id+'">复制为新任务</button>'+(has("extend")?' <select id="dx'+id+'"><option value="30">延期 30 分钟</option><option value="60">延期 1 小时</option><option value="120">延期 2 小时</option></select><button class="ab" data-a="extend" data-id="'+id+'">延期</button>':"")+(has("force_close")?' <button class="ab no" data-a="fclose" data-id="'+id+'">强制关闭</button>':"")+'</p>'}
+async function openD(id){CUR=id;var t=chk(await call("GET","/api/tasks/"+id)),ch=chk(await call("GET","/api/tasks?chain="+id));$("dlb").innerHTML=detail(t,ch);if(!$("dl").open)$("dl").showModal();try{location.hash="t"+id}catch(e){}tray("d");loadImgs()}
+async function projectDlg(){var r=chk(await call("GET","/api/projects")),ac=r.bots.filter(function(b){return b.role==="acceptor"}),ee=r.bots.filter(function(b){return b.role==="executor"});
+ $("pjb").innerHTML='<h3>项目管理</h3>'+r.projects.map(function(p){return'<div>'+esc(p.name)+'：验收 '+esc(p.acceptor)+'；执行 '+p.executors.map(esc).join("、")+'</div>'}).join("")+'<h4>登记项目</h4><div class="row"><input id="pn" maxlength="40" placeholder="项目名"><select id="pa">'+ac.map(function(b){return'<option>'+esc(b.name)+'</option>'}).join("")+'</select></div><div class="row">'+ee.map(function(b){return'<label><input type="checkbox" class="pe" value="'+esc(b.name)+'"> '+esc(b.name)+'</label>'}).join("")+'</div><p><button class="go" id="pgo">登记项目</button></p>';$("pjd").showModal()}
+async function logDlg(){LOGS=chk(await call("GET","/api/events"));$("lc").innerHTML='<option value="">全部动作</option>'+Object.keys(AL).map(function(a){return'<option value="'+a+'">'+AL[a]+'</option>'}).join("");$("csv").hidden=true;lr();$("ld").showModal()}
+function lr(){var a=$("la").value.trim(),c=$("lc").value;LV=LOGS.filter(function(e){return(!a||e.actor.indexOf(a)>=0)&&(!c||e.act===c)});$("lrows").innerHTML=LV.map(function(e){return'<tr><td>'+full(e.at)+'</td><td><span class="idl" data-d="'+e.task+'">#'+e.task+'</span></td><td>'+esc(e.actor)+'</td><td>'+esc(AL[e.act]||e.act)+'</td><td>'+esc(e.detail)+((e.imgs||[]).length?" 📎"+e.imgs.length:"")+'</td></tr>'}).join("")||'<tr><td class="mut">无记录</td></tr>'}
+function ask(t,need){return new Promise(function(res){$("cft").textContent=t;$("cfw").value="";$("cfe").textContent="";$("cf").showModal();CFR=function(ok){var w=$("cfw").value.trim();if(ok&&need&&!w){$("cfe").textContent="请填写原因";return}CFR=null;$("cf").close();res(ok?w:null)}})}
+var MAPA={claim:"claim",done:"complete",bad:"fail",tmo:"simulate-timeout",pass:"accept",fail:"accept",retry:"requeue",reassign:"reassign",round:"reopen",close:"close",note:"note",extend:"extend",fclose:"force-close"},CONF={retry:"放回待领取",reassign:"改派",round:"再开一轮",close:"关闭",fclose:"强制关闭",extend:"延期"};
+async function doAct(el){
+ var d=el.dataset,id=d.id,a=d.a,v=function(i){var x=$(i+id);return x?x.value.trim():""},b={};
+ if(a==="copy"){var t=chk(await call("GET","/api/tasks/"+id));$("dl").close();if([].some.call($("pj").options,function(o){return o.value===t.project})){$("pj").value=t.project;fillPub();$("px").value=t.assignee}$("pt").value=t.title;$("ps").value=t.std||"";scrollTo(0,0);return}
+ if(a==="fail"&&!v("n")){note("请填写验收失败原因");return}
+ if(a==="note"&&!v("dn")&&!(AT.d||[]).length){note("请填写留言或附图");return}
+ if(a==="done")b={result:v("n"),report:v("r")};else if(a==="bad")b={reason:v("n")};else if(a==="pass")b={result:"pass"};else if(a==="fail")b={result:"fail",note:v("n")};
+ else if(a==="reassign")b={to:v("to")||undefined};else if(a==="note")b={text:v("dn")};else if(a==="extend")b={minutes:+v("dx")};
+ if(CONF[a]){var w=await ask(CONF[a]+"任务 #"+id+"（不可撤销）",1);if(w==null)return;b.why=w}
+ var im=await up(a==="note"?"d":"t"+id);if(im.length)b.images=im;
+ chk(await call("POST","/api/tasks/"+id+"/"+MAPA[a],b));note("");refresh(true);if($("dl").open&&CUR)openD(CUR)}
+document.addEventListener("click",async function(e){
+ var el=e.target,d=el.dataset||{};
+ try{
+  if(d.close){$(d.close).close();return}
+  if(el.id==="rty"||el.id==="rf"){refresh();return}
+  if(d.f){F=(F===d.f?"all":d.f);refresh();return}
+  if(d.rm){AT[d.rm].splice(+d.i,1);tray(d.rm);return}
+  if(el.classList&&el.classList.contains("th")&&el.src){var g=[].slice.call((el.closest(".imgs,.tray")||el.parentNode).querySelectorAll("img.th")).filter(function(i){return i.src});LB=g.map(function(i){return i.src});LI=Math.max(0,g.indexOf(el));lbShow();if(!$("lb").open)$("lb").showModal();return}
+  if(el.id==="lp"){LI=(LI+LB.length-1)%LB.length;lbShow();return}if(el.id==="ln"){LI=(LI+1)%LB.length;lbShow();return}
+  if(el.id==="cfo"){CFR&&CFR(true);return}if(el.id==="cfn"){CFR&&CFR(false);return}
+  if(el.id==="pmb"){await projectDlg();return}if(el.id==="lgb"){await logDlg();return}
+  if(el.id==="lcsv"){var q=function(s){s=String(s==null?"":s);if(/^[=+\-@]/.test(s))s="'"+s;return'"'+s.replace(/"/g,'""')+'"'},t2=$("csv");t2.value="时间,任务,操作人,动作,说明\n"+LV.map(function(x){return[full(x.at),x.task,x.actor,AL[x.act]||x.act,x.detail].map(q).join(",")}).join("\n");t2.hidden=false;t2.select();try{document.execCommand("copy");note("CSV 已复制到剪贴板")}catch(x){}return}
+  if(el.id==="lg"){TK=$("tk").value.trim();try{sessionStorage.setItem("tk",TK)}catch(x){}await who();refresh();return}
+  if(el.id==="lo"){TK="";$("tk").value="";try{sessionStorage.removeItem("tk")}catch(x){}await who();refresh();return}
+  if(el.id==="pgo"){var ee=[].slice.call(document.querySelectorAll(".pe:checked")).map(function(c){return c.value});chk(await call("POST","/api/projects",{name:$("pn").value,acceptor:$("pa").value,executors:ee}));$("pjd").close();refresh();return}
+  if(d.d){await openD(+d.d);return}
+  if(el.id==="pg"){var ti=$("pt").value.trim();if(!ti){note("请填写任务内容");return}if(RQ)return;RQ=1;el.disabled=true;
+   try{var im=await up("pub");chk(await call("POST","/api/tasks",{project:$("pj").value,title:ti,assignee:$("px").value,deadline_minutes:+$("pd").value,std:$("ps").value.trim(),images:im}));$("pt").value="";$("ps").value="";F="all";note("");refresh()}finally{RQ=0;el.disabled=false}return}
+  if(d.a){if(RQ)return;RQ=1;el.disabled=true;try{await doAct(el)}finally{RQ=0;el.disabled=false}}
+ }catch(x){RQ=0;if(x.status===409){note("任务刚被他人处理（"+x.message+"），已刷新最新状态");refresh(true);if($("dl").open&&CUR)openD(CUR)}else if(x.status===401)note("请先登录（令牌无效或已过期）");else note("请求失败："+x.message)}
+});
+$("qs").addEventListener("input",function(){QS=this.value.trim();refresh()});
+$("bf").addEventListener("change",function(){BF=this.value;refresh()});
+$("pj").addEventListener("change",fillPub);
+$("la").addEventListener("input",lr);$("lc").addEventListener("change",lr);
+$("me").addEventListener("change",async function(){ME=this.value;await who();refresh()});
+$("dl").addEventListener("close",function(){CUR=0;AT.d=[];try{history.replaceState(null,"",location.pathname+location.search)}catch(e){}});
+$("cf").addEventListener("cancel",function(){CFR&&CFR(false)});
+function hc(){var m=location.hash.match(/^#t(\d+)$/);if(m&&(+m[1]!==CUR||!$("dl").open))openD(+m[1]).catch(function(){})}
+window.addEventListener("hashchange",hc);
+(async function init(){
+ $("pa").innerHTML=att("pub");
+ $("bf").innerHTML='<option value="">全部 BOT</option>';
+ if(REAL){try{TK=sessionStorage.getItem("tk")||""}catch(e){}$("me").hidden=true;$("tkw").hidden=false;$("tk").value=TK}
+ else $("me").innerHTML=["管理员"].concat(BOTS.map(function(b){return b.name}),["观察者"]).map(function(n){return'<option>'+esc(n)+'</option>'}).join("");
+ await who();await refresh();hc();
+ setInterval(function(){if(!busy())refresh(true);if($("dl").open&&CUR&&!/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName))openD(CUR).catch(function(){})},5000)})();
+</script>
+</body>
+</html>

@@ -19,6 +19,7 @@ export type Drawing = {
   id: string
   userId: string
   title: string | null
+  project?: string | null
   r2Key: string
   thumbnailKey: string | null
   isPublic: boolean | null
@@ -79,8 +80,17 @@ export const api = {
     },
   },
   drawings: {
-    list: () => fetchAPI<{ drawings: Drawing[] }>('/drawings'),
-    create: () => fetchAPI<{ id: string }>('/drawings', { method: 'POST' }),
+    list: (params?: { project?: string }) => {
+      const q = new URLSearchParams()
+      if (params?.project) q.set('project', params.project)
+      const qs = q.toString()
+      return fetchAPI<{ drawings: Drawing[] }>(`/drawings${qs ? `?${qs}` : ''}`)
+    },
+    create: (data?: { title?: string; project?: string; elements?: unknown[]; appState?: Record<string, unknown> }) =>
+      fetchAPI<{ id: string; r2Key?: string; project?: string }>('/drawings', {
+        method: 'POST',
+        body: JSON.stringify(data || {}),
+      }),
     get: (id: string) => fetchAPI<{ drawing: Drawing }>(`/drawings/${id}`),
     getContent: (id: string) => fetchAPI<DrawingContent>(`/drawings/${id}/content`),
     saveContent: (id: string, content: DrawingContent) =>
@@ -93,8 +103,18 @@ export const api = {
         method: 'PATCH',
         body: JSON.stringify({ title }),
       }),
+    update: (id: string, data: { title?: string; project?: string }) =>
+      fetchAPI<{ updated: boolean }>(`/drawings/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      }),
     delete: (id: string) =>
-      fetchAPI<{ deleted: boolean }>(`/drawings/${id}`, { method: 'DELETE' }),
+      fetchAPI<{ deleted: boolean; id?: string }>(`/drawings/${id}`, { method: 'DELETE' }),
+    batchDelete: (ids: string[]) =>
+      fetchAPI<{ deleted: number; ids: string[] }>('/drawings/batch-delete', {
+        method: 'POST',
+        body: JSON.stringify({ ids }),
+      }),
   },
   notes: {
     list: (params?: { tag?: string; trash?: boolean }) => {

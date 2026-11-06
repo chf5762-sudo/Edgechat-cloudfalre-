@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useState, useEffect } from 'react'
+import { Toaster } from 'sonner'
 import { useSession } from '@/client/lib/auth'
 import { api } from '@/client/lib/api-client'
 import { DrawingPage } from './pages/DrawingPage'
@@ -56,7 +57,9 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 export function App() {
   return (
-    <Routes>
+    <>
+      <Toaster position="top-right" richColors />
+      <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/s/:shareId" element={<SharedDrawingPage />} />
       <Route
@@ -85,5 +88,6 @@ export function App() {
       />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </>
   )
 }

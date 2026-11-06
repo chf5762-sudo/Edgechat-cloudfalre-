@@ -101,6 +101,7 @@ export const drawings = sqliteTable('drawings', {
   id: text('id').primaryKey(),
   userId: text('user_id').notNull().references(() => users.id),
   title: text('title').default('Untitled'),
+  project: text('project').default('default'),
   r2Key: text('r2_key').notNull(),
   thumbnailKey: text('thumbnail_key'),
   isPublic: integer('is_public', { mode: 'boolean' }).default(false),

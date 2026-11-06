@@ -25,6 +25,7 @@ diagramRoutes.post('/diagram', async (c) => {
   const db = drizzle(c.env.DB)
   const body = await c.req.json<{
     title?: string
+    project?: string
     elements?: unknown[]
     appState?: Record<string, unknown>
     files?: Record<string, unknown>
@@ -33,6 +34,7 @@ diagramRoutes.post('/diagram', async (c) => {
   const drawingId = nanoid(12)
   const shareId = nanoid(10)
   const title = body.title?.trim() || 'Untitled'
+  const project = body.project?.trim() || 'default'
   const elements = Array.isArray(body.elements) ? body.elements : []
 
   const drawingR2Key = `drawings/${user.id}/${drawingId}.excalidraw`
@@ -64,6 +66,7 @@ diagramRoutes.post('/diagram', async (c) => {
     id: drawingId,
     userId: user.id,
     title,
+    project,
     r2Key: drawingR2Key,
     shareId,
     elementCount: elements.length,

@@ -251,6 +251,7 @@ export function registerTools(server: McpServer) {
         .select({
           id: drawings.id,
           title: drawings.title,
+          project: drawings.project,
           elementCount: drawings.elementCount,
           lastModified: drawings.lastModified,
           shareId: drawings.shareId,
@@ -261,7 +262,11 @@ export function registerTools(server: McpServer) {
         .orderBy(desc(drawings.lastModified))
         .limit(limit || 50)
 
-      return text({ drawings: results })
+      const safeDrawings = results.map((d) => ({
+        ...d,
+        project: d.project || 'default',
+      }))
+      return text({ drawings: safeDrawings })
     },
   )
 
@@ -304,10 +309,11 @@ export function registerTools(server: McpServer) {
     'Create a new Excalidraw drawing',
     {
       title: z.string().optional().describe('Drawing title (default: "Untitled")'),
+      project: z.string().optional().describe('Project name or category (default: "default")'),
       elements: z.array(z.record(z.unknown())).optional().describe('Excalidraw elements array'),
       appState: z.record(z.unknown()).optional().describe('Excalidraw appState (viewBackgroundColor, etc.)'),
     },
-    async ({ title, elements, appState }) => {
+    async ({ title, project, elements, appState }) => {
       const ctx = getContext('current')
       if (!ctx) return error('No auth context')
 
@@ -330,10 +336,12 @@ export function registerTools(server: McpServer) {
       })
 
       const now = new Date().toISOString()
+      const projectVal = project?.trim() || 'default'
       await db.insert(drawings).values({
         id,
         userId: ctx.userId,
         title: title?.trim() || 'Untitled',
+        project: projectVal,
         r2Key,
         elementCount: drawingElements.length,
         lastModified: now,
@@ -343,6 +351,7 @@ export function registerTools(server: McpServer) {
         id,
         drawingId: id,
         title: title?.trim() || 'Untitled',
+        project: projectVal,
         editUrl: `${ctx.origin}/draw/${id}`,
       })
     },
@@ -356,6 +365,7 @@ export function registerTools(server: McpServer) {
       drawingId: z.string().optional().describe('Drawing ID to update'),
       id: z.string().optional().describe('Alias for drawingId'),
       title: z.string().optional().describe('New title'),
+      project: z.string().optional().describe('New project name or category'),
       elements: z.array(z.record(z.unknown())).optional().describe('New Excalidraw elements array'),
       appState: z.record(z.unknown()).optional().describe('New appState'),
     },
@@ -382,6 +392,9 @@ export function registerTools(server: McpServer) {
 
       if (title !== undefined) {
         updates.title = title.trim()
+      }
+      if (args.project !== undefined) {
+        updates.project = args.project.trim() || 'default'
       }
 
       if (elements !== undefined || appState !== undefined) {
@@ -512,11 +525,12 @@ export function registerTools(server: McpServer) {
     'Create a drawing and share it in one step. Returns share URL and PNG URL.',
     {
       title: z.string().optional().describe('Diagram title'),
+      project: z.string().optional().describe('Project name or category (default: "default")'),
       elements: z.array(z.record(z.unknown())).optional().describe('Excalidraw elements array'),
       appState: z.record(z.unknown()).optional().describe('Excalidraw appState'),
       generatePng: z.boolean().optional().describe('Generate PNG via Browser Rendering (slower, default false)'),
     },
-    async ({ title, elements, appState, generatePng: shouldGeneratePng }) => {
+    async ({ title, project, elements, appState, generatePng: shouldGeneratePng }) => {
       const ctx = getContext('current')
       if (!ctx) return error('No auth context')
 
@@ -525,6 +539,7 @@ export function registerTools(server: McpServer) {
       const shareId = nanoid(10)
       const drawingElements = normalizeElementsFont(elements || [])
       const drawingTitle = title?.trim() || 'Untitled'
+      const projectVal = project?.trim() || 'default'
 
       const drawingR2Key = `drawings/${ctx.userId}/${drawingId}.excalidraw`
       const shareR2Key = `shares/${shareId}.excalidraw`
@@ -553,6 +568,7 @@ export function registerTools(server: McpServer) {
         id: drawingId,
         userId: ctx.userId,
         title: drawingTitle,
+        project: projectVal,
         r2Key: drawingR2Key,
         shareId,
         elementCount: drawingElements.length,
@@ -588,6 +604,7 @@ export function registerTools(server: McpServer) {
         pngUrl,
         editUrl: `${ctx.origin}/draw/${drawingId}`,
         title: drawingTitle,
+        project: projectVal,
       })
     },
   )

@@ -952,6 +952,7 @@ CREATE TABLE IF NOT EXISTS `drawings` (
 	`id` text PRIMARY KEY NOT NULL,
 	`user_id` text NOT NULL REFERENCES `user`(`id`),
 	`title` text DEFAULT 'Untitled',
+	`project` text DEFAULT 'default',
 	`r2_key` text NOT NULL,
 	`thumbnail_key` text,
 	`is_public` integer DEFAULT 0,

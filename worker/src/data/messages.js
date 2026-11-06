@@ -136,26 +136,39 @@ export async function externalSenderExists(db, source, senderId) {
 }
 
 async function mapDecryptedMessage(env, row) {
-	const content = await decryptMessageContent(env, row.content, {
-		channelId: row.channel_id,
-		senderId: row.sender_id ?? 0,
-		senderContext:
-			row.sender_kind === "external" ? `${row.source}:${row.external_sender_id}` : "",
-	});
+	let content = row.content;
+	try {
+		content = await decryptMessageContent(env, row.content, {
+			channelId: row.channel_id,
+			senderId: row.sender_id ?? 0,
+			senderContext:
+				row.sender_kind === "external" ? `${row.source}:${row.external_sender_id}` : "",
+		});
+	} catch (error) {
+		console.warn(`[messages] Decrypt failed for message ${row.id}:`, error instanceof Error ? error.message : String(error));
+		content = "（历史消息因密钥版本不同无法解密）";
+	}
+
 	let replyTo = null;
 	if (row.reply_to_message_id) {
 		const replyId = Number(row.reply_to_message_id);
 		if (!row.reply_message_id || row.reply_deleted_at) {
 			replyTo = { id: replyId, deleted: true };
 		} else {
-			const replyContent = await decryptMessageContent(env, row.reply_content, {
-				channelId: row.channel_id,
-				senderId: row.reply_sender_id ?? 0,
-				senderContext:
-					row.reply_sender_kind === "external"
-						? `${row.reply_source}:${row.reply_external_sender_id}`
-						: "",
-			});
+			let replyContent = row.reply_content;
+			try {
+				replyContent = await decryptMessageContent(env, row.reply_content, {
+					channelId: row.channel_id,
+					senderId: row.reply_sender_id ?? 0,
+					senderContext:
+						row.reply_sender_kind === "external"
+							? `${row.reply_source}:${row.reply_external_sender_id}`
+							: "",
+				});
+			} catch (error) {
+				console.warn(`[messages] Decrypt failed for reply message ${row.reply_to_message_id}:`, error instanceof Error ? error.message : String(error));
+				replyContent = "（历史消息因密钥版本不同无法解密）";
+			}
 			replyTo = {
 				id: replyId,
 				deleted: false,

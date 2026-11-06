@@ -582,5 +582,14 @@ export default {
   'demo.selectPage': '选择演示页面',
   'demo.reset': '重置演示数据',
   'demo.star': '在 GitHub 上给我们点个 Star',
-  'demo.buildMessage': '纯前端演示构建'
+  'demo.buildMessage': '纯前端演示构建',
+  'capture.button': '截屏',
+  'capture.title': '屏幕截图 (截取后自动复制到剪贴板，可直接在输入框粘贴)',
+  'capture.ready': '截图已生成',
+  'capture.copied': '已自动复制到剪贴板，可直接在输入框 Ctrl+V 粘贴',
+  'capture.copyFailed': '截图已生成，可一键下载或点击再次复制',
+  'capture.download': '一键下载图片',
+  'capture.copy': '复制到剪贴板',
+  'capture.copySuccess': '已成功复制到剪贴板！',
+  'capture.shortcutsTitle': '系统与浏览器原生截图推荐'
 };

@@ -8,6 +8,7 @@ import {
   UploadCloud, X
 } from '@lucide/vue';
 import api from '../../api.js';
+import ScreenCaptureButton from '../common/ScreenCaptureButton.vue';
 
 // ─── state ────────────────────────────────────────────────────────────────
 const files = ref([]);
@@ -704,6 +705,8 @@ onMounted(loadAll);
         <button type="button" class="btn-icon" :class="{'btn-icon--spin': loading}" title="刷新" @click="loadAll">
           <RefreshCw :size="15" />
         </button>
+
+        <ScreenCaptureButton variant="storage" />
 
         <template v-if="activeView==='files'">
           <button type="button" class="btn-secondary" @click="createFolder">

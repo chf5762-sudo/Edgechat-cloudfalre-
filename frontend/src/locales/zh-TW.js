@@ -655,7 +655,16 @@ export default {
   "demo.selectPage": "選擇演示頁面",
   "demo.reset": "重置演示數據",
   "demo.star": "在 GitHub 上給我們點個 Star",
-  "demo.buildMessage": "純前端演示構建"
+  "demo.buildMessage": "純前端演示構建",
+  "capture.button": "截圖",
+  "capture.title": "螢幕截圖 (擷取後自動複製到剪貼簿，可直接在輸入框貼上)",
+  "capture.ready": "截圖已生成",
+  "capture.copied": "已自動複製到剪貼簿，可直接在輸入框 Ctrl+V 貼上",
+  "capture.copyFailed": "截圖已生成，可一鍵下載或點擊再次複製",
+  "capture.download": "一鍵下載圖片",
+  "capture.copy": "複製到剪貼簿",
+  "capture.copySuccess": "已成功複製到剪貼簿！",
+  "capture.shortcutsTitle": "系統與瀏覽器原生截圖推薦"
 };
 
 export { localizeServerError } from './server-errors/zh-TW.js';

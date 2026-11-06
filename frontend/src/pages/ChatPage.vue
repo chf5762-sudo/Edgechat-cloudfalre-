@@ -18,6 +18,8 @@ import MessageContextMenu from '../components/chat/MessageContextMenu.vue';
 import PinnedMessageBar from '../components/chat/PinnedMessageBar.vue';
 import RoomBridgeNotice from '../components/chat/RoomBridgeNotice.vue';
 import PublicGroupDiscovery from '../components/chat/PublicGroupDiscovery.vue';
+import ScreenCaptureButton from '../components/common/ScreenCaptureButton.vue';
+import ScreenCapturePreviewDock from '../components/common/ScreenCapturePreviewDock.vue';
 import UiAvatar from '../components/ui/Avatar.vue';
 import LanguageSwitch from '../components/ui/LanguageSwitch.vue';
 import { useActiveRoom } from '../composables/useActiveRoom.js';
@@ -1015,6 +1017,7 @@ watch(
           title="Canvas"
           allow="clipboard-read; clipboard-write; fullscreen"
         />
+        <ScreenCaptureButton variant="floating" />
         <button
           v-if="isMobileViewport"
           type="button"
@@ -1034,6 +1037,7 @@ watch(
           title="Notes"
           allow="clipboard-read; clipboard-write; fullscreen"
         />
+        <ScreenCaptureButton variant="floating" />
         <button
           v-if="isMobileViewport"
           type="button"
@@ -1165,6 +1169,7 @@ watch(
                 <Settings :size="19" aria-hidden="true" />
                 <span>{{ t('chat.groupSettings') }}</span>
               </button>
+              <ScreenCaptureButton variant="header" />
               <LanguageSwitch class="chat-header__language-switch" />
               <button
                 type="button"
@@ -1244,6 +1249,7 @@ watch(
 
         <div v-else class="chat-empty">
           <div class="chat-empty__top-actions">
+            <ScreenCaptureButton variant="header" />
             <LanguageSwitch class="chat-empty__language-switch" />
             <button
               type="button"
@@ -1386,6 +1392,7 @@ watch(
       @open="openInAppNotification"
       @dismiss="dismissInAppNotification"
     />
+    <ScreenCapturePreviewDock />
   </div>
 </template>
 

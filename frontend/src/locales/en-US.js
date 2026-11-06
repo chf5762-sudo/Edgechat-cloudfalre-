@@ -582,7 +582,16 @@ export default {
   'demo.selectPage': 'Select demo page',
   'demo.reset': 'Reset demo data',
   'demo.star': 'Star on GitHub',
-  'demo.buildMessage': 'Frontend-only demo build'
+  'demo.buildMessage': 'Frontend-only demo build',
+  'capture.button': 'Capture',
+  'capture.title': 'Screen capture (auto-copied to clipboard, ready to Ctrl+V paste)',
+  'capture.ready': 'Screenshot Ready',
+  'capture.copied': 'Copied to clipboard! Press Ctrl+V in chat to paste.',
+  'capture.copyFailed': 'Screenshot ready. Click below to download or copy.',
+  'capture.download': 'Download Image',
+  'capture.copy': 'Copy to Clipboard',
+  'capture.copySuccess': 'Copied to clipboard successfully!',
+  'capture.shortcutsTitle': 'Native Screenshot Shortcuts'
 };
 
 export { localizeServerError } from './server-errors/en-US.js';

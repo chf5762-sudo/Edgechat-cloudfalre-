@@ -19,9 +19,17 @@ async function assets(request: Request, env, settings, authenticated?: boolean) 
   const url = new URL(request.url);
   const path = url.pathname;
 
-  // Public share link redirect: /s/:shareId -> /flaredraw/s/:shareId
+  // Public share link redirect: check storage_shares first, then fall back to FlareDraw
   if (path.startsWith('/s/')) {
     const shareId = path.slice(3);
+    if (env.DB) {
+      const storageShare = await env.DB.prepare(
+        `SELECT object_key, folder_id FROM storage_shares WHERE token = ? LIMIT 1`
+      ).bind(shareId).first().catch(() => null);
+      if (storageShare) {
+        return Response.redirect(`${url.origin}/api/storage/share-view/${shareId}`, 302);
+      }
+    }
     return Response.redirect(`${url.origin}/flaredraw/s/${shareId}`, 302);
   }
 

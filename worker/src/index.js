@@ -93,9 +93,18 @@ app.get('/api/site', async (c) => {
 registerTelegramPublicRoutes(app);
 registerInstanceBridgePublicRoutes(app);
 
-// Public share link redirect: /s/:shareId -> /flaredraw/s/:shareId
-app.get('/s/:shareId', (c) => {
+// Public share link: check storage_shares first, then fall back to FlareDraw drawing share
+app.get('/s/:shareId', async (c) => {
   const shareId = c.req.param('shareId');
+  // Check if this is a storage share token
+  const storageShare = await c.env.DB.prepare(
+    `SELECT object_key, folder_id FROM storage_shares WHERE token = ? LIMIT 1`
+  ).bind(shareId).first().catch(() => null);
+
+  if (storageShare) {
+    return c.redirect(`/api/storage/share-view/${shareId}`, 302);
+  }
+  // FlareDraw drawing share
   return c.redirect(`/flaredraw/s/${shareId}`, 302);
 });
 

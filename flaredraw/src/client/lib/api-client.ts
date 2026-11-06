@@ -45,6 +45,8 @@ export type Note = {
   isPinned: boolean
   createdAt: string
   updatedAt: string
+  deletedAt?: string | null
+  tags?: string[]
 }
 
 export const api = {
@@ -95,25 +97,64 @@ export const api = {
       fetchAPI<{ deleted: boolean }>(`/drawings/${id}`, { method: 'DELETE' }),
   },
   notes: {
-    list: () => fetchAPI<{ notes: Note[] }>('/notes'),
-    create: (data?: { title?: string; content?: string }) =>
+    list: (params?: { tag?: string; trash?: boolean }) => {
+      const q = new URLSearchParams()
+      if (params?.tag) q.set('tag', params.tag)
+      if (params?.trash) q.set('trash', '1')
+      const qs = q.toString()
+      return fetchAPI<{ notes: Note[] }>(`/notes${qs ? `?${qs}` : ''}`)
+    },
+    create: (data?: { title?: string; content?: string; tags?: string[] }) =>
       fetchAPI<{ note: Note; id: string }>('/notes', {
         method: 'POST',
         body: JSON.stringify(data || {}),
       }),
     get: (id: string) => fetchAPI<{ note: Note }>(`/notes/${id}`),
-    update: (id: string, data: { title?: string; content?: string }) =>
+    update: (id: string, data: { title?: string; content?: string; tags?: string[] }) =>
       fetchAPI<{ saved: boolean; note: Note }>(`/notes/${id}`, {
         method: 'PUT',
         body: JSON.stringify(data),
       }),
-    delete: (id: string) =>
-      fetchAPI<{ deleted: boolean; id: string }>(`/notes/${id}`, {
+    delete: (id: string, permanent = false) =>
+      fetchAPI<{ deleted: boolean; permanent?: boolean; id: string }>(
+        `/notes/${id}${permanent ? '?permanent=1' : ''}`,
+        { method: 'DELETE' }
+      ),
+    restore: (id: string) =>
+      fetchAPI<{ restored: boolean; id: string }>(`/notes/${id}/restore`, {
+        method: 'POST',
+      }),
+    batchDelete: (ids: string[]) =>
+      fetchAPI<{ deleted: number; ids: string[] }>('/notes/batch-delete', {
+        method: 'POST',
+        body: JSON.stringify({ ids }),
+      }),
+    purgeTrash: () =>
+      fetchAPI<{ purged: number }>('/notes/trash/purge', {
         method: 'DELETE',
       }),
     togglePin: (id: string) =>
       fetchAPI<{ pinned: boolean; note: Note }>(`/notes/${id}/pin`, {
         method: 'POST',
       }),
+    updateTags: (id: string, tags: string[]) =>
+      fetchAPI<{ ok: boolean; tags: string[] }>(`/notes/${id}/tags`, {
+        method: 'PATCH',
+        body: JSON.stringify({ tags }),
+      }),
+    uploadImage: async (file: File) => {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await fetch('/api/notes/images', {
+        method: 'POST',
+        body: fd,
+        credentials: 'include',
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error((err as { error: string }).error || '图片上传失败')
+      }
+      return res.json() as Promise<{ ok: boolean; url: string }>
+    },
   },
 }

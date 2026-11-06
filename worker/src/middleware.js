@@ -6,10 +6,13 @@ import { authorizedDatabase, checkPolicy, policyAssertion, runAuthorizedBatch } 
 import { ApiError } from './errors.js';
 
 export async function authMiddleware(c, next) {
-  if (new URL(c.req.url).pathname.startsWith('/api/admin/')) c.header('Cache-Control', 'private, no-store');
+  const path = new URL(c.req.url).pathname;
+  if (path.startsWith('/api/storage/share-view/')) {
+    return next();
+  }
+  if (path.startsWith('/api/admin/')) c.header('Cache-Control', 'private, no-store');
   if (!cookieRequestAllowed(c.req.raw)) return errorResponse('请求被拒绝', 403);
   const token = extractSessionToken(c.req.raw);
-  const path = new URL(c.req.url).pathname;
   const management = path.startsWith('/api/admin/') || path === '/api/me/authorization' || path === '/api/auth/session';
   if (path.startsWith('/api/admin/') && !c.req.raw.headers.get('Authorization') && !c.req.raw.headers.get('Cookie')) return errorResponse('请先登录', 401);
   let result;

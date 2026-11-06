@@ -329,9 +329,34 @@ CREATE TABLE IF NOT EXISTS uploaded_files (
   content_type TEXT NOT NULL DEFAULT '',
   size INTEGER NOT NULL DEFAULT 0,
   client_upload_id TEXT,
+  folder_id INTEGER DEFAULT NULL,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT NULL,
+  trashed_at TEXT DEFAULT NULL,
   FOREIGN KEY (owner_user_id) REFERENCES users(id)
 );
+
+CREATE TABLE IF NOT EXISTS storage_folders (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_user_id TEXT NOT NULL,
+  parent_id INTEGER DEFAULT NULL,
+  name TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  trashed_at TEXT DEFAULT NULL,
+  deleted_at TEXT DEFAULT NULL
+);
+
+CREATE TABLE IF NOT EXISTS storage_shares (
+  id TEXT PRIMARY KEY,
+  object_key TEXT,
+  folder_id INTEGER,
+  owner_user_id TEXT NOT NULL,
+  token TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  expires_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_storage_shares_token ON storage_shares(token);
 
 CREATE TABLE IF NOT EXISTS device_sessions (
   id TEXT PRIMARY KEY,
@@ -952,8 +977,11 @@ CREATE TABLE IF NOT EXISTS `notes` (
 	`content` text DEFAULT '' NOT NULL,
 	`is_pinned` integer DEFAULT 0 NOT NULL,
 	`created_at` text DEFAULT (datetime('now')) NOT NULL,
-	`updated_at` text DEFAULT (datetime('now')) NOT NULL
+	`updated_at` text DEFAULT (datetime('now')) NOT NULL,
+	`deleted_at` text DEFAULT NULL,
+	`tags` text DEFAULT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_notes_owner_deleted ON notes(user_id, deleted_at);
 
 CREATE TABLE IF NOT EXISTS `api_tokens` (
 	`id` text PRIMARY KEY NOT NULL,

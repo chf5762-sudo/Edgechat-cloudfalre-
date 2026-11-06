@@ -1,5 +1,5 @@
 <script setup>
-import { ArrowLeft, Ban, Bell, BellOff, ContactRound, LogOut, Menu, MessageCircle, NotebookPen, Palette, Phone, Settings, UploadCloud, UsersRound } from '@lucide/vue';
+import { ArrowLeft, Ban, Bell, BellOff, ContactRound, LogOut, Menu, MessageCircle, NotebookPen, Palette, Phone, Settings, SlidersHorizontal, UploadCloud, UsersRound } from '@lucide/vue';
 import { useChatFileDrop } from '../composables/useChatFileDrop.js';
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -52,6 +52,7 @@ const MemberPanel = defineAsyncComponent(() => import('../components/chat/Member
 const MobileNavigationDrawer = defineAsyncComponent(() => import('../components/chat/MobileNavigationDrawer.vue'));
 const PublicGroupJoinDialog = defineAsyncComponent(() => import('../components/chat/PublicGroupJoinDialog.vue'));
 const UserProfileDialog = defineAsyncComponent(() => import('../components/chat/UserProfileDialog.vue'));
+const SidebarCustomizerDialog = defineAsyncComponent(() => import('../components/chat/SidebarCustomizerDialog.vue'));
 const ContactsPage = defineAsyncComponent(() => import('./ContactsPage.vue'));
 
 const router = useRouter();
@@ -398,6 +399,264 @@ function openChat() { router.push('/'); }
 function openContacts() { router.push('/contacts'); }
 function openCanvas() { router.push('/canvas'); }
 function openNotes() { router.push('/notes'); }
+
+const DEFAULT_SIDEBAR_MENU = [
+  { id: 'chats', visible: true },
+  { id: 'contacts', visible: true },
+  { id: 'notifications', visible: true },
+  { id: 'admin', visible: true },
+  { id: 'canvas', visible: true },
+  { id: 'notes', visible: true }
+];
+
+const SIDEBAR_STORAGE_KEY = 'edgechat_sidebar_menu_config_v1';
+
+function loadSidebarMenuConfig() {
+  try {
+    const raw = localStorage.getItem(SIDEBAR_STORAGE_KEY);
+    if (!raw) return DEFAULT_SIDEBAR_MENU.map(i => ({ ...i }));
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return DEFAULT_SIDEBAR_MENU.map(i => ({ ...i }));
+    const validIds = new Set(DEFAULT_SIDEBAR_MENU.map(i => i.id));
+    const result = [];
+    for (const item of parsed) {
+      if (item && validIds.has(item.id) && !result.some(r => r.id === item.id)) {
+        result.push({
+          id: item.id,
+          visible: item.visible !== false
+        });
+      }
+    }
+    for (const def of DEFAULT_SIDEBAR_MENU) {
+      if (!result.some(r => r.id === def.id)) {
+        result.push({ ...def });
+      }
+    }
+    return result;
+  } catch {
+    return DEFAULT_SIDEBAR_MENU.map(i => ({ ...i }));
+  }
+}
+
+const sidebarMenuConfig = ref(loadSidebarMenuConfig());
+const showSidebarCustomizer = ref(false);
+
+function saveSidebarMenuConfig(config) {
+  try {
+    localStorage.setItem(SIDEBAR_STORAGE_KEY, JSON.stringify(config));
+  } catch {
+    // ignore
+  }
+}
+
+function updateSidebarMenuOrder(newOrder) {
+  sidebarMenuConfig.value = newOrder;
+  saveSidebarMenuConfig(newOrder);
+}
+
+function toggleMenuItemVisibility(id) {
+  sidebarMenuConfig.value = sidebarMenuConfig.value.map(item => {
+    if (item.id === id) {
+      return { ...item, visible: !item.visible };
+    }
+    return item;
+  });
+  saveSidebarMenuConfig(sidebarMenuConfig.value);
+}
+
+function resetSidebarMenuConfig() {
+  sidebarMenuConfig.value = DEFAULT_SIDEBAR_MENU.map(i => ({ ...i }));
+  saveSidebarMenuConfig(sidebarMenuConfig.value);
+}
+
+function openSidebarCustomizer() {
+  showSidebarCustomizer.value = true;
+}
+
+const sidebarMenuItemsMap = computed(() => ({
+  chats: {
+    id: 'chats',
+    label: t('nav.chats'),
+    tooltip: t('nav.chats'),
+    icon: MessageCircle,
+    action: openChat,
+    isCurrent: isChatView.value,
+    class: 'right-sidebar-action right-sidebar-action--labeled tooltip',
+    ariaLabel: t('nav.chats'),
+    available: true
+  },
+  contacts: {
+    id: 'contacts',
+    label: t('contacts.title'),
+    tooltip: t('contacts.title'),
+    icon: ContactRound,
+    action: openContacts,
+    isCurrent: isContactsView.value,
+    class: 'right-sidebar-action right-sidebar-action--labeled tooltip',
+    ariaLabel: t('contacts.title'),
+    available: true
+  },
+  notifications: {
+    id: 'notifications',
+    label: notificationStateLabel.value,
+    tooltip: notificationActionLabel.value,
+    icon: notificationsEnabled.value ? Bell : BellOff,
+    action: toggleNotifications,
+    disabled: notificationToggleDisabled.value,
+    class: [
+      'right-sidebar-action right-sidebar-action--labeled tooltip',
+      notificationsEnabled.value ? 'right-sidebar-action--notification-active' : ''
+    ].filter(Boolean).join(' '),
+    ariaLabel: notificationActionLabel.value,
+    ariaPressed: notificationsEnabled.value,
+    available: true
+  },
+  admin: {
+    id: 'admin',
+    label: t('nav.admin'),
+    tooltip: t('nav.admin'),
+    icon: null,
+    action: openAdmin,
+    isCurrent: false,
+    class: 'right-sidebar-action right-sidebar-action--admin tooltip',
+    ariaLabel: t('nav.admin'),
+    available: showAdminEntry.value
+  },
+  canvas: {
+    id: 'canvas',
+    label: t('nav.canvas'),
+    tooltip: t('nav.canvas'),
+    icon: Palette,
+    action: openCanvas,
+    isCurrent: isCanvasView.value,
+    class: 'right-sidebar-action right-sidebar-action--labeled tooltip',
+    ariaLabel: t('nav.canvas'),
+    available: true
+  },
+  notes: {
+    id: 'notes',
+    label: t('nav.notes'),
+    tooltip: t('nav.notes'),
+    icon: NotebookPen,
+    action: openNotes,
+    isCurrent: isNotesView.value,
+    class: 'right-sidebar-action right-sidebar-action--labeled tooltip',
+    ariaLabel: t('nav.notes'),
+    available: true
+  }
+}));
+
+const visibleSidebarMenuItems = computed(() => {
+  return sidebarMenuConfig.value
+    .filter(cfg => cfg.visible)
+    .map(cfg => {
+      const meta = sidebarMenuItemsMap.value[cfg.id];
+      if (!meta || !meta.available) return null;
+      return {
+        ...meta,
+        visible: cfg.visible
+      };
+    })
+    .filter(Boolean);
+});
+
+const allSidebarMenuItemsForCustomizer = computed(() => {
+  return sidebarMenuConfig.value
+    .map(cfg => {
+      const meta = sidebarMenuItemsMap.value[cfg.id];
+      if (!meta) return null;
+      if (cfg.id === 'admin' && !showAdminEntry.value) return null;
+      return {
+        id: cfg.id,
+        label: meta.label,
+        visible: cfg.visible,
+        icon: meta.icon
+      };
+    })
+    .filter(Boolean);
+});
+
+const draggedSidebarMenuId = ref(null);
+const dragOverSidebarMenuId = ref(null);
+const dragOverPosition = ref(null);
+
+function handleSidebarDragStart(event, item) {
+  draggedSidebarMenuId.value = item.id;
+  event.dataTransfer.effectAllowed = 'move';
+  event.dataTransfer.setData('text/plain', item.id);
+}
+
+function handleSidebarDragOver(event, item) {
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'move';
+  if (draggedSidebarMenuId.value && draggedSidebarMenuId.value !== item.id) {
+    dragOverSidebarMenuId.value = item.id;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const midY = rect.top + rect.height / 2;
+    dragOverPosition.value = event.clientY < midY ? 'before' : 'after';
+  }
+}
+
+function handleSidebarDragEnter(event, item) {
+  event.preventDefault();
+  if (draggedSidebarMenuId.value && draggedSidebarMenuId.value !== item.id) {
+    dragOverSidebarMenuId.value = item.id;
+  }
+}
+
+function handleSidebarDragLeave(event, item) {
+  if (event.currentTarget && !event.currentTarget.contains(event.relatedTarget)) {
+    if (dragOverSidebarMenuId.value === item.id) {
+      dragOverSidebarMenuId.value = null;
+      dragOverPosition.value = null;
+    }
+  }
+}
+
+function handleSidebarDrop(event, item) {
+  event.preventDefault();
+  const sourceId = draggedSidebarMenuId.value || event.dataTransfer.getData('text/plain');
+  const targetId = item.id;
+  if (sourceId && targetId && sourceId !== targetId) {
+    const list = [...sidebarMenuConfig.value];
+    const fromIndex = list.findIndex(i => i.id === sourceId);
+    if (fromIndex !== -1) {
+      const [moved] = list.splice(fromIndex, 1);
+      let toIndex = list.findIndex(i => i.id === targetId);
+      if (toIndex === -1) {
+        list.push(moved);
+      } else {
+        if (dragOverPosition.value === 'after') {
+          toIndex += 1;
+        }
+        list.splice(toIndex, 0, moved);
+      }
+      updateSidebarMenuOrder(list);
+    }
+  }
+  draggedSidebarMenuId.value = null;
+  dragOverSidebarMenuId.value = null;
+  dragOverPosition.value = null;
+}
+
+function handleSidebarDragEnd() {
+  draggedSidebarMenuId.value = null;
+  dragOverSidebarMenuId.value = null;
+  dragOverPosition.value = null;
+}
+
+let sidebarMenuTouchTimer = null;
+function handleSidebarTouchStart() {
+  sidebarMenuTouchTimer = setTimeout(() => {
+    openSidebarCustomizer();
+  }, 600);
+}
+function handleSidebarTouchEnd() {
+  if (sidebarMenuTouchTimer) {
+    clearTimeout(sidebarMenuTouchTimer);
+    sidebarMenuTouchTimer = null;
+  }
+}
 let nativeRoomNavigationReady = false;
 function openNativeRoom() {
   if (!nativeRoomNavigationReady) return;
@@ -542,6 +801,7 @@ watch(
     createGroup: showCreateGroup.value,
     publicGroupJoin: publicGroupPreview.value,
     groupSettings: showGroupEditor.value,
+    sidebarCustomizer: showSidebarCustomizer.value,
   }),
   (states) => {
     for (const [name, open] of Object.entries(states)) {
@@ -569,90 +829,69 @@ watch(
     <!-- 导航与会话列表保持独立，切换通讯录时不破坏现有聊天工作区。 -->
     <aside class="right-sidebar">
       <div class="right-sidebar-inner">
-        <div class="right-sidebar-section right-sidebar-actions">
+        <div class="right-sidebar-section right-sidebar-actions" @contextmenu.prevent="openSidebarCustomizer">
+          <TransitionGroup name="sidebar-menu-list">
+            <div
+              v-for="item in visibleSidebarMenuItems"
+              :key="item.id"
+              class="sidebar-menu-item-wrapper"
+              :class="{
+                'sidebar-menu-item-wrapper--dragging': draggedSidebarMenuId === item.id,
+                'sidebar-menu-item-wrapper--drag-over-before': dragOverSidebarMenuId === item.id && dragOverPosition === 'before',
+                'sidebar-menu-item-wrapper--drag-over-after': dragOverSidebarMenuId === item.id && dragOverPosition === 'after'
+              }"
+              draggable="true"
+              @dragstart="handleSidebarDragStart($event, item)"
+              @dragover="handleSidebarDragOver($event, item)"
+              @dragenter="handleSidebarDragEnter($event, item)"
+              @dragleave="handleSidebarDragLeave($event, item)"
+              @drop="handleSidebarDrop($event, item)"
+              @dragend="handleSidebarDragEnd"
+              @touchstart.passive="handleSidebarTouchStart"
+              @touchend.passive="handleSidebarTouchEnd"
+              @touchcancel.passive="handleSidebarTouchEnd"
+            >
+              <button
+                type="button"
+                :class="[item.class, { 'right-sidebar-action--current': item.isCurrent }]"
+                :data-tooltip="item.tooltip"
+                :aria-label="item.ariaLabel"
+                :aria-current="item.isCurrent ? 'page' : undefined"
+                :aria-pressed="item.ariaPressed"
+                :disabled="item.disabled"
+                @click="item.action"
+              >
+                <component :is="item.icon" v-if="item.icon" :size="20" aria-hidden="true" />
+                <svg
+                  v-else-if="item.id === 'admin'"
+                  viewBox="0 0 24 24"
+                  width="20"
+                  height="20"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                >
+                  <title>{{ item.label }}</title>
+                  <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+                  <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+                </svg>
+                <span class="right-sidebar-action__label">{{ item.label }}</span>
+              </button>
+            </div>
+          </TransitionGroup>
+
           <button
             type="button"
-            class="right-sidebar-action right-sidebar-action--labeled tooltip"
-            :class="{ 'right-sidebar-action--current': isChatView }"
-            :data-tooltip="t('nav.chats')"
-            :aria-label="t('nav.chats')"
-            :aria-current="isChatView ? 'page' : undefined"
-            @click="openChat"
+            class="right-sidebar-action right-sidebar-action--customize tooltip"
+            :data-tooltip="t('nav.customizeMenu')"
+            :aria-label="t('nav.customizeMenu')"
+            @click="openSidebarCustomizer"
           >
-            <MessageCircle :size="20" aria-hidden="true" />
-            <span class="right-sidebar-action__label">{{ t('nav.chats') }}</span>
-          </button>
-          <button
-            type="button"
-            class="right-sidebar-action right-sidebar-action--labeled tooltip"
-            :class="{ 'right-sidebar-action--current': isContactsView }"
-            :data-tooltip="t('contacts.title')"
-            :aria-label="t('contacts.title')"
-            :aria-current="isContactsView ? 'page' : undefined"
-            @click="openContacts"
-          >
-            <ContactRound :size="20" aria-hidden="true" />
-            <span class="right-sidebar-action__label">{{ t('contacts.title') }}</span>
-          </button>
-          <button
-            type="button"
-            class="right-sidebar-action right-sidebar-action--labeled tooltip"
-            :class="{ 'right-sidebar-action--notification-active': notificationsEnabled }"
-            :data-tooltip="notificationActionLabel"
-            :aria-label="notificationActionLabel"
-            :aria-pressed="notificationsEnabled"
-            :disabled="notificationToggleDisabled"
-            @click="toggleNotifications"
-          >
-            <Bell v-if="notificationsEnabled" :size="20" aria-hidden="true" />
-            <BellOff v-else :size="20" aria-hidden="true" />
-            <span class="right-sidebar-action__label">{{ notificationStateLabel }}</span>
-          </button>
-          <button
-            v-if="showAdminEntry"
-            type="button"
-            class="right-sidebar-action right-sidebar-action--admin tooltip"
-            :data-tooltip="t('nav.admin')"
-            :aria-label="t('nav.admin')"
-            @click="openAdmin"
-          >
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8">
-              <title>{{ t('nav.admin') }}</title>
-              <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
-              <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
-            </svg>
-            <span class="right-sidebar-action__label">{{ t('nav.admin') }}</span>
-          </button>
-          <button
-            type="button"
-            class="right-sidebar-action right-sidebar-action--labeled tooltip"
-            :class="{ 'right-sidebar-action--current': isCanvasView }"
-            :data-tooltip="t('nav.canvas')"
-            :aria-label="t('nav.canvas')"
-            :aria-current="isCanvasView ? 'page' : undefined"
-            @click="openCanvas"
-          >
-            <Palette :size="20" aria-hidden="true" />
-            <span class="right-sidebar-action__label">{{ t('nav.canvas') }}</span>
-          </button>
-          <button
-            type="button"
-            class="right-sidebar-action right-sidebar-action--labeled tooltip"
-            :class="{ 'right-sidebar-action--current': isNotesView }"
-            :data-tooltip="t('nav.notes')"
-            :aria-label="t('nav.notes')"
-            :aria-current="isNotesView ? 'page' : undefined"
-            @click="openNotes"
-          >
-            <NotebookPen :size="20" aria-hidden="true" />
-            <span class="right-sidebar-action__label">{{ t('nav.notes') }}</span>
+            <SlidersHorizontal :size="17" aria-hidden="true" />
           </button>
         </div>
 
         <div class="right-sidebar-section right-sidebar-user-group">
-          <button type="button" class="right-sidebar-user tooltip" :data-tooltip="session?.displayName || t('nav.personalSettings')" :aria-label="session?.displayName || t('nav.personalSettings')" @click="openSettings">
-            <UiAvatar :src="session?.avatarUrl" :fallback="session?.displayName?.[0] || 'U'" size="sm" />
-          </button>
           <button
             type="button"
             class="right-sidebar-action right-sidebar-action--labeled right-sidebar-action--settings tooltip"
@@ -1100,6 +1339,15 @@ watch(
       @upload-avatar="uploadGroupAvatar"
       @save="saveGroupSettings"
     />
+    <SidebarCustomizerDialog
+      v-if="visitedOverlays.has('sidebarCustomizer')"
+      :show="showSidebarCustomizer"
+      :menu-items="allSidebarMenuItemsForCustomizer"
+      @close="showSidebarCustomizer = false"
+      @toggle="toggleMenuItemVisibility"
+      @reorder="updateSidebarMenuOrder"
+      @reset="resetSidebarMenuConfig"
+    />
     <InAppNotificationStack
       :notifications="inAppNotifications"
       @open="openInAppNotification"
@@ -1279,8 +1527,54 @@ watch(
   margin-top: auto;
 }
 
-.right-sidebar-action,
-.right-sidebar-user {
+.sidebar-menu-list-move {
+  transition: transform 0.25s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.sidebar-menu-item-wrapper {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  cursor: grab;
+}
+
+.sidebar-menu-item-wrapper:active {
+  cursor: grabbing;
+}
+
+.sidebar-menu-item-wrapper--dragging {
+  opacity: 0.35;
+  transform: scale(0.92);
+}
+
+.sidebar-menu-item-wrapper--drag-over-before::before {
+  content: "";
+  position: absolute;
+  top: -6px;
+  left: 8px;
+  right: 8px;
+  height: 3px;
+  background: var(--chat-accent, #3b82f6);
+  border-radius: 999px;
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.6);
+  z-index: 20;
+}
+
+.sidebar-menu-item-wrapper--drag-over-after::after {
+  content: "";
+  position: absolute;
+  bottom: -6px;
+  left: 8px;
+  right: 8px;
+  height: 3px;
+  background: var(--chat-accent, #3b82f6);
+  border-radius: 999px;
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.6);
+  z-index: 20;
+}
+
+.right-sidebar-action {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1297,10 +1591,26 @@ watch(
   touch-action: manipulation;
 }
 
-.right-sidebar-action:hover,
-.right-sidebar-user:hover {
+.right-sidebar-action:hover {
   background: rgba(0, 0, 0, 0.05);
   color: var(--chat-ink);
+}
+
+.right-sidebar-action--customize {
+  width: 36px;
+  min-height: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 10px;
+  margin-top: 2px;
+  opacity: 0.6;
+  transition: opacity 150ms ease, background 150ms ease, transform 150ms ease;
+}
+
+.right-sidebar-action--customize:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.06);
+  transform: translateY(-1px);
 }
 
 .right-sidebar-action--danger:hover {

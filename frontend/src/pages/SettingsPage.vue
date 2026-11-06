@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import api from '../api.js';
@@ -305,6 +305,28 @@ async function changePassword() {
           <span class="settings-kicker">{{ t('settings.profileKicker') }}</span>
         </div>
         <div class="settings-header__right">
+          <div class="settings-quick-nav">
+            <button type="button" class="nav-link" @click="router.push('/')">
+              <svg aria-hidden="true" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+              </svg>
+              <span>{{ t('settings.backToChat') }}</span>
+            </button>
+            <button
+              v-if="showAdminEntry"
+              type="button"
+              class="nav-link"
+              @click="router.push('/admin')"
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="7" height="7" rx="1" />
+                <rect x="14" y="3" width="7" height="7" rx="1" />
+                <rect x="3" y="14" width="7" height="7" rx="1" />
+                <rect x="14" y="14" width="7" height="7" rx="1" />
+              </svg>
+              <span>{{ t('settings.adminConsole') }}</span>
+            </button>
+          </div>
           <LanguageSwitch />
           <div class="avatar-block">
             <button type="button" class="avatar-trigger" @click="openAvatarPicker" :title="t('settings.changeAvatarTitle')">
@@ -407,29 +429,6 @@ async function changePassword() {
         </section>
         <TelegramNotificationSettings class="settings-section" />
       </div>
-
-      <nav class="settings-nav">
-        <button type="button" class="nav-link" @click="router.push('/')">
-          <svg aria-hidden="true" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-          </svg>
-          {{ t('settings.backToChat') }}
-        </button>
-        <button
-          v-if="showAdminEntry"
-          type="button"
-          class="nav-link"
-          @click="router.push('/admin')"
-        >
-          <svg aria-hidden="true" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="3" width="7" height="7" rx="1" />
-            <rect x="14" y="3" width="7" height="7" rx="1" />
-            <rect x="3" y="14" width="7" height="7" rx="1" />
-            <rect x="14" y="14" width="7" height="7" rx="1" />
-          </svg>
-          {{ t('settings.adminConsole') }}
-        </button>
-      </nav>
     </div>
 
     <Transition name="modal">
@@ -745,35 +744,35 @@ async function changePassword() {
   cursor: not-allowed;
 }
 
-.settings-nav {
+.settings-quick-nav {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 10px;
-  opacity: 0;
-  animation: sectionRise 0.4s cubic-bezier(0.22, 1, 0.36, 1) 0.4s forwards;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .nav-link {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 16px;
+  padding: 6px 14px;
   border-radius: 999px;
-  border: 1px solid rgba(91, 141, 191, 0.1);
-  background: rgba(255, 255, 255, 0.4);
-  color: #6b8aab;
+  border: 1px solid rgba(91, 141, 191, 0.16);
+  background: rgba(255, 255, 255, 0.55);
+  color: #4a6888;
   font-size: 12px;
   font-weight: 500;
+  white-space: nowrap;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .nav-link:hover {
-  background: rgba(255, 255, 255, 0.7);
-  border-color: rgba(91, 141, 191, 0.2);
-  color: #2c4a6e;
+  background: rgba(255, 255, 255, 0.85);
+  border-color: rgba(91, 141, 191, 0.3);
+  color: #1e3a5f;
   transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(91, 141, 191, 0.12);
 }
 
 .nav-link svg {
@@ -1017,7 +1016,7 @@ async function changePassword() {
 @media (prefers-reduced-motion: reduce) {
   .settings-container,
   .settings-section,
-  .settings-nav {
+  .settings-quick-nav {
     animation: none;
     opacity: 1;
     transform: none;

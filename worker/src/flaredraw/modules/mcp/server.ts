@@ -739,6 +739,345 @@ export function registerTools(server: McpServer) {
       })
     },
   )
+  // ═══════════════════════════════════════════════════════
+  // Chat & BOT Interaction Tools
+  // ═══════════════════════════════════════════════════════
+
+  // ─── chat_list_channels ───
+  server.tool(
+    'chat_list_channels',
+    'List all visible chat channels, public groups, and direct messages in EdgeChat.',
+    {},
+    async () => {
+      const ctx = getContext('current')
+      if (!ctx) return error('No auth context')
+      const db = ctx.env.DB
+      const { results } = await db.prepare(
+        `SELECT id, name, description, kind, created_at
+         FROM channels
+         WHERE deleted_at IS NULL
+         ORDER BY id ASC`
+      ).all()
+      return text({ channels: results })
+    }
+  )
+
+  // ─── chat_list_users ───
+  server.tool(
+    'chat_list_users',
+    'List registered users and bots in EdgeChat.',
+    {},
+    async () => {
+      const ctx = getContext('current')
+      if (!ctx) return error('No auth context')
+      const db = ctx.env.DB
+      const { results } = await db.prepare(
+        `SELECT id, username, display_name, bio, is_admin, created_at
+         FROM users
+         WHERE deleted_at IS NULL
+         ORDER BY id ASC`
+      ).all()
+      return text({ users: results })
+    }
+  )
+
+  // ─── chat_send_message ───
+  server.tool(
+    'chat_send_message',
+    'Send a chat message or Bot reply to an EdgeChat channel or DM.',
+    {
+      channelId: z.number().describe('Target channel ID (e.g. 1 for general)'),
+      content: z.string().describe('Message content (plain text or markdown)'),
+      replyToMessageId: z.number().optional().describe('Optional message ID being replied to'),
+    },
+    async ({ channelId, content, replyToMessageId }) => {
+      const ctx = getContext('current')
+      if (!ctx) return error('No auth context')
+      const db = ctx.env.DB
+
+      // Find admin or bot sender user
+      const adminUser = await db.prepare(
+        `SELECT id, username, display_name FROM users WHERE is_admin = 1 AND deleted_at IS NULL ORDER BY id ASC LIMIT 1`
+      ).first() as any
+
+      const senderId = adminUser ? adminUser.id : 1
+      const [channel] = (await db.prepare(
+        `SELECT id, kind, name FROM channels WHERE id = ? AND deleted_at IS NULL LIMIT 1`
+      ).bind(channelId).all()).results as any[]
+
+      if (!channel) return error(`Channel ID ${channelId} not found`)
+
+      // Try sending via ChannelRoom DO for instant WebSocket broadcasting to all clients
+      try {
+        const channelRoomEnv = (ctx.env as any).CHANNEL_ROOM
+        if (channelRoomEnv) {
+          const stub = channelRoomEnv.get(channelRoomEnv.idFromName(`${channel.kind}:${Number(channel.id)}`))
+          const headers = new Headers({
+            'x-cfchat-internal-auth': 'worker-verified',
+            'x-cfchat-verified-user-id': String(senderId),
+            'x-cfchat-verified-is-admin': '1',
+            'x-cfchat-verified-at': String(Date.now()),
+            'Content-Type': 'application/json',
+          })
+          const res = await stub.fetch('https://cfchat.internal/client-action', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              room: { kind: channel.kind, id: Number(channel.id) },
+              action: {
+                type: 'send',
+                content: content.trim(),
+                replyToMessageId: replyToMessageId || null,
+                clientMessageId: `mcp-${Date.now()}-${nanoid(6)}`,
+              },
+            }),
+          })
+          if (res.ok) {
+            const data = await res.json() as any
+            return text({ sent: true, channelId, message: data.message })
+          }
+        }
+      } catch (e) {
+        console.warn('ChannelRoom dispatch error, fallback to direct DB insert', e)
+      }
+
+      // Direct D1 insert fallback
+      const res = await db.prepare(
+        `INSERT INTO messages (channel_id, sender_id, content, reply_to_message_id, created_at)
+         VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+         RETURNING id, channel_id, sender_id, content, created_at`
+      ).bind(channelId, senderId, content.trim(), replyToMessageId || null).first()
+
+      return text({ sent: true, channelId, message: res })
+    }
+  )
+
+  // ─── chat_read_messages ───
+  server.tool(
+    'chat_read_messages',
+    'Read recent messages from an EdgeChat channel or DM.',
+    {
+      channelId: z.number().describe('Target channel ID (e.g. 1 for general)'),
+      limit: z.number().optional().describe('Maximum number of messages to return (default 30, max 100)'),
+    },
+    async ({ channelId, limit = 30 }) => {
+      const ctx = getContext('current')
+      if (!ctx) return error('No auth context')
+      const db = ctx.env.DB
+      const take = Math.min(Math.max(Number(limit) || 30, 1), 100)
+
+      const { results } = await db.prepare(
+        `SELECT m.id, m.channel_id, m.sender_id, m.content, m.attachment_key, m.attachment_name,
+                m.reply_to_message_id, m.created_at,
+                u.username AS sender_username, u.display_name AS sender_display_name
+         FROM messages m
+         LEFT JOIN users u ON u.id = m.sender_id
+         WHERE m.channel_id = ? AND m.deleted_at IS NULL
+         ORDER BY m.id DESC
+         LIMIT ?`
+      ).bind(channelId, take).all()
+
+      return text({ channelId, messages: results.reverse() })
+    }
+  )
+
+  // ═══════════════════════════════════════════════════════
+  // Cloud Document & Storage CRUD Tools
+  // ═══════════════════════════════════════════════════════
+
+  // ─── storage_list_files ───
+  server.tool(
+    'storage_list_files',
+    'List uploaded files and documents in cloud storage.',
+    {
+      search: z.string().optional().describe('Optional search query to filter by filename'),
+      limit: z.number().optional().describe('Max files to return (default 50)'),
+    },
+    async ({ search, limit = 50 }) => {
+      const ctx = getContext('current')
+      if (!ctx) return error('No auth context')
+      const db = ctx.env.DB
+      const take = Math.min(Math.max(Number(limit) || 50, 1), 100)
+
+      let sql = `SELECT object_key, owner_user_id, filename, content_type, size, created_at
+                 FROM uploaded_files
+                 WHERE NOT EXISTS (SELECT 1 FROM pending_r2_delete WHERE pending_r2_delete.object_key = uploaded_files.object_key)`
+      const params: any[] = []
+      if (search && search.trim()) {
+        sql += ` AND filename LIKE ?`
+        params.push(`%${search.trim()}%`)
+      }
+      sql += ` ORDER BY created_at DESC LIMIT ?`
+      params.push(take)
+
+      const { results } = await db.prepare(sql).bind(...params).all()
+      const files = results.map((r: any) => ({
+        key: r.object_key,
+        name: r.filename,
+        type: r.content_type,
+        size: Number(r.size || 0),
+        url: `${ctx.origin}/files/${encodeURIComponent(r.object_key)}`,
+        createdAt: r.created_at,
+      }))
+      return text({ files, count: files.length })
+    }
+  )
+
+  // ─── storage_upload_file ───
+  server.tool(
+    'storage_upload_file',
+    'Upload a document, attachment, image, or file to cloud storage. Accepts text content or base64 encoded data.',
+    {
+      filename: z.string().describe('File name including extension (e.g. report.pdf, doc.md, data.json)'),
+      content: z.string().describe('File content: plain text or Base64 encoded string'),
+      isBase64: z.boolean().optional().describe('Whether the content is base64 encoded (default false)'),
+      contentType: z.string().optional().describe('MIME type (optional, inferred from extension if omitted)'),
+    },
+    async ({ filename, content, isBase64 = false, contentType }) => {
+      const ctx = getContext('current')
+      if (!ctx) return error('No auth context')
+      const db = ctx.env.DB
+
+      let bytes: Uint8Array
+      if (isBase64) {
+        const binary = atob(content)
+        bytes = new Uint8Array(binary.length)
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+      } else {
+        bytes = new TextEncoder().encode(content)
+      }
+
+      const mime = contentType || getMimeTypeFromFilename(filename)
+      const ext = filename.includes('.') ? filename.slice(filename.lastIndexOf('.')) : ''
+      const key = `1/${Date.now()}-${nanoid(10)}${ext}`
+
+      // Encrypt and store to R2
+      const envWithStorage = ctx.env as any
+      const filesBucket = envWithStorage.FILES || envWithStorage.STORAGE
+      if (!filesBucket) return error('Storage bucket not configured')
+
+      // Encrypt using EdgeChat encryption if available, or write directly
+      try {
+        const { encryptAttachment } = await import('../../../encryption.js' as any)
+        const encrypted = await encryptAttachment(ctx.env, bytes.buffer, key)
+        await filesBucket.put(key, encrypted, {
+          httpMetadata: { contentType: mime, cacheControl: 'private, no-store' },
+          customMetadata: { filename, edgechatEncryption: 'v1' },
+        })
+      } catch {
+        await filesBucket.put(key, bytes.buffer, {
+          httpMetadata: { contentType: mime, cacheControl: 'private, no-store' },
+          customMetadata: { filename },
+        })
+      }
+
+      // Record in uploaded_files
+      await db.prepare(
+        `INSERT INTO uploaded_files (object_key, owner_user_id, filename, content_type, size, created_at)
+         VALUES (?, 1, ?, ?, ?, CURRENT_TIMESTAMP)
+         ON CONFLICT(object_key) DO UPDATE SET filename = excluded.filename, size = excluded.size`
+      ).bind(key, filename, mime, bytes.byteLength).run()
+
+      const fileUrl = `${ctx.origin}/files/${encodeURIComponent(key)}`
+      return text({
+        uploaded: true,
+        file: {
+          key,
+          name: filename,
+          type: mime,
+          size: bytes.byteLength,
+          url: fileUrl,
+        },
+      })
+    }
+  )
+
+  // ─── storage_get_file_info ───
+  server.tool(
+    'storage_get_file_info',
+    'Get metadata and download URL for an uploaded file by its key.',
+    {
+      key: z.string().describe('File object_key in storage'),
+    },
+    async ({ key }) => {
+      const ctx = getContext('current')
+      if (!ctx) return error('No auth context')
+      const db = ctx.env.DB
+
+      const row = await db.prepare(
+        `SELECT object_key, owner_user_id, filename, content_type, size, created_at
+         FROM uploaded_files
+         WHERE object_key = ? LIMIT 1`
+      ).bind(key).first() as any
+
+      if (!row) return error('File not found')
+
+      return text({
+        file: {
+          key: row.object_key,
+          name: row.filename,
+          type: row.content_type,
+          size: Number(row.size || 0),
+          url: `${ctx.origin}/files/${encodeURIComponent(row.object_key)}`,
+          createdAt: row.created_at,
+        },
+      })
+    }
+  )
+
+  // ─── storage_delete_file ───
+  server.tool(
+    'storage_delete_file',
+    'Permanently delete a file from cloud storage by its key.',
+    {
+      key: z.string().describe('File object_key in storage'),
+    },
+    async ({ key }) => {
+      const ctx = getContext('current')
+      if (!ctx) return error('No auth context')
+      const db = ctx.env.DB
+      const envWithStorage = ctx.env as any
+      const filesBucket = envWithStorage.FILES || envWithStorage.STORAGE
+
+      if (filesBucket) {
+        await filesBucket.delete(key).catch(() => {})
+      }
+      await db.prepare('DELETE FROM uploaded_files WHERE object_key = ?').bind(key).run()
+
+      return text({ deleted: true, key })
+    }
+  )
+}
+
+function getMimeTypeFromFilename(filename: string): string {
+  const ext = filename.split('.').pop()?.toLowerCase() || ''
+  const map: Record<string, string> = {
+    pdf: 'application/pdf',
+    txt: 'text/plain',
+    md: 'text/markdown',
+    json: 'application/json',
+    csv: 'text/csv',
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    gif: 'image/gif',
+    svg: 'image/svg+xml',
+    webp: 'image/webp',
+    zip: 'application/zip',
+    tar: 'application/x-tar',
+    gz: 'application/gzip',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    mp3: 'audio/mpeg',
+    mp4: 'video/mp4',
+    wav: 'audio/wav',
+    html: 'text/plain',
+    js: 'text/javascript',
+    ts: 'text/plain',
+    py: 'text/plain',
+  }
+  return map[ext] || 'application/octet-stream'
 }
 
 // ─── Context management ───

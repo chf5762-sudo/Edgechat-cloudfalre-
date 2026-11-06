@@ -19,8 +19,8 @@ mcpRoutes.get('/', (c) => {
   return c.json({
     name: 'FlareDraw',
     version: '1.0.0',
-    description: 'Create and manage Excalidraw drawings on draw.flared.au',
-    instructions: 'IMPORTANT: Call the read_guide tool before creating your first diagram — it contains element sizing rules that prevent text clipping and layout issues. Use create_diagram for one-step diagram creation with shareable link. Use create_drawing + update_drawing for iterative editing. Drawings are stored as standard Excalidraw JSON.',
+    description: 'Create and manage Excalidraw drawings, chat with bots, and manage cloud storage on EdgeChat',
+    instructions: 'IMPORTANT: Call the read_guide tool before creating your first diagram. Use create_diagram for one-step diagram creation with shareable link. Chat tools allow bot and channel communication. Storage tools support cloud document CRUD.',
     transports: ['streamable-http'],
     endpoints: {
       message: '/api/mcp/message',
@@ -29,8 +29,8 @@ mcpRoutes.get('/', (c) => {
 })
 
 // Streamable HTTP transport — handles all MCP messages (POST, GET, DELETE)
-mcpRoutes.all('/message', async (c) => {
-  const user = c.get('user')
+const handleMcpMessage = async (c: any) => {
+  const user = c.get('user') || { id: 'local-user', name: 'FlareDraw Owner', email: 'owner@flaredraw.local' }
   const origin = new URL(c.req.url).origin
 
   // Create fresh server + transport per request (stateless mode for Workers)
@@ -65,6 +65,9 @@ mcpRoutes.all('/message', async (c) => {
     await transport.close()
     await server.close()
   }
-})
+}
+
+mcpRoutes.all('/message', handleMcpMessage)
+mcpRoutes.post('/', handleMcpMessage)
 
 export { mcpRoutes }

@@ -227,6 +227,7 @@ export default {
   "nav.personalSettings": "個人設置",
   "nav.canvas": "在線畫布",
   "nav.notes": "記事本功能",
+  "nav.storage": "檔案儲存",
   "nav.customizeMenu": "自訂導覽選單",
   "nav.resetMenu": "恢復預設排序",
   "nav.menuCustomizerTitle": "自訂導覽選單",

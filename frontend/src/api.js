@@ -241,6 +241,23 @@ export default {
       body: form
     });
   },
+  getStorageFiles(search = '') {
+    const query = search ? '?q=' + encodeURIComponent(search) : '';
+    return request('/storage/files' + query);
+  },
+  uploadStorageFile(file) {
+    const form = new FormData();
+    form.append('file', file);
+    return request('/storage/files', {
+      method: 'POST',
+      body: form
+    });
+  },
+  deleteStorageFile(key) {
+    return request('/storage/files/' + encodeURIComponent(key), {
+      method: 'DELETE'
+    });
+  },
   getRoomWebSocketUrl(kind, roomId) {
     const token = getStoredToken();
     const url = new URL(`${apiPrefix}/ws/${kind}/${roomId}`, getEdgeChatServerOrigin());

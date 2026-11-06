@@ -1,5 +1,5 @@
 <script setup>
-import { Bell, BellOff, ContactRound, LayoutDashboard, LogOut, MessageCircle, NotebookPen, Palette, Settings, X } from '@lucide/vue';
+import { Bell, BellOff, ContactRound, FolderArchive, LayoutDashboard, LogOut, MessageCircle, NotebookPen, Palette, Settings, X } from '@lucide/vue';
 import { ref, toRef } from 'vue';
 import { useOverlayLifecycle } from '../../composables/useOverlayLifecycle.js';
 import { t } from '../../i18n.js';
@@ -16,7 +16,7 @@ const props = defineProps({
   activeView: { type: String, default: 'chat' }
 });
 
-const emit = defineEmits(['close', 'chat', 'contacts', 'canvas', 'notes', 'settings', 'admin', 'notification', 'logout']);
+const emit = defineEmits(['close', 'chat', 'contacts', 'canvas', 'notes', 'storage', 'settings', 'admin', 'notification', 'logout']);
 const drawerEl = ref(null);
 
 useOverlayLifecycle({
@@ -80,6 +80,10 @@ useOverlayLifecycle({
             <button type="button" :aria-current="activeView === 'notes' ? 'page' : undefined" @click="emit('notes')">
               <NotebookPen :size="21" aria-hidden="true" />
               <span>{{ t('nav.notes') }}</span>
+            </button>
+            <button type="button" :aria-current="activeView === 'storage' ? 'page' : undefined" @click="emit('storage')">
+              <FolderArchive :size="21" aria-hidden="true" />
+              <span>{{ t('nav.storage') }}</span>
             </button>
             <button type="button" @click="emit('settings')">
               <Settings :size="21" aria-hidden="true" />

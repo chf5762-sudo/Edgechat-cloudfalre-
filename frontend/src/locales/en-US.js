@@ -154,6 +154,7 @@ export default {
   'nav.personalSettings': 'Personal settings',
   'nav.canvas': 'Canvas',
   'nav.notes': 'Notes',
+  'nav.storage': 'Storage',
   'nav.customizeMenu': 'Customize navigation menu',
   'nav.resetMenu': 'Reset to default',
   'nav.menuCustomizerTitle': 'Customize Navigation',

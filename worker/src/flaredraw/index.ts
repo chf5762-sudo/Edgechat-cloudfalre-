@@ -159,6 +159,10 @@ export function registerFlareDrawRoutes(app: Hono<any>) {
 
   // MCP routes: dual auth
   app.use('/api/mcp/message', authMiddleware())
+  app.use('/api/mcp', async (c, next) => {
+    if (c.req.method === 'GET') return next()
+    return authMiddleware()(c, next)
+  })
 
   // Mount routes
   app.route('/api/drawings', drawingRoutes)

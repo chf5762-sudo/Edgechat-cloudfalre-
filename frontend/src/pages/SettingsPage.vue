@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router';
 import api from '../api.js';
 import store from '../store.js';
 import TelegramNotificationSettings from '../components/settings/TelegramNotificationSettings.vue';
+import AiAgentMcpSettings from '../components/settings/AiAgentMcpSettings.vue';
 import UiAvatar from '../components/ui/Avatar.vue';
 import LanguageSwitch from '../components/ui/LanguageSwitch.vue';
 import { isCapacitorAndroid, pickNativeFile } from '../capacitor-platform.ts';
@@ -428,6 +429,7 @@ async function changePassword() {
           </button>
         </section>
         <TelegramNotificationSettings class="settings-section" />
+        <AiAgentMcpSettings />
       </div>
     </div>
 

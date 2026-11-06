@@ -45,6 +45,12 @@ const router = createRouter({
       meta: { transition: 'page', workspace: true }
     },
     {
+      path: '/storage',
+      name: 'storage',
+      component: () => import('./pages/ChatPage.vue'),
+      meta: { transition: 'page', workspace: true }
+    },
+    {
       path: '/admin',
       component: () => import('./pages/AdminPage.vue'),
       meta: { admin: true, transition: 'page' },

@@ -1,5 +1,6 @@
 <script setup>
-import { ArrowLeft, Ban, Bell, BellOff, ContactRound, LogOut, Menu, MessageCircle, NotebookPen, Palette, Phone, Settings, SlidersHorizontal, UploadCloud, UsersRound } from '@lucide/vue';
+import { ArrowLeft, Ban, Bell, BellOff, ContactRound, FolderArchive, LogOut, Menu, MessageCircle, NotebookPen, Palette, Phone, Settings, SlidersHorizontal, UploadCloud, UsersRound } from '@lucide/vue';
+import StorageWorkspace from '../components/chat/StorageWorkspace.vue';
 import { useChatFileDrop } from '../composables/useChatFileDrop.js';
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -70,15 +71,18 @@ const showAdminEntry = computed(() => Boolean(session.value?.canAccessAdmin));
 const isContactsView = computed(() => route.name === 'contacts');
 const isCanvasView = computed(() => route.name === 'canvas');
 const isNotesView = computed(() => route.name === 'notes');
-const isEmbeddedView = computed(() => isCanvasView.value || isNotesView.value);
+const isStorageView = computed(() => route.name === 'storage');
+const isEmbeddedView = computed(() => isCanvasView.value || isNotesView.value || isStorageView.value);
 const isChatView = computed(() => !isContactsView.value && !isEmbeddedView.value);
 const contactsVisited = ref(isContactsView.value);
 const canvasVisited = ref(isCanvasView.value);
 const notesVisited = ref(isNotesView.value);
+const storageVisited = ref(isStorageView.value);
 
 watch(isContactsView, (val) => { if (val) contactsVisited.value = true; });
 watch(isCanvasView, (val) => { if (val) canvasVisited.value = true; });
 watch(isNotesView, (val) => { if (val) notesVisited.value = true; });
+watch(isStorageView, (val) => { if (val) storageVisited.value = true; });
 const inboxActiveRoom = computed(() => isContactsView.value ? null : activeRoom.value);
 
 const { activeRoomKey, canManageActiveRoom, applyActiveChannel, selectDm, roomLabel, roomSubtitle } =
@@ -399,6 +403,7 @@ function openChat() { router.push('/'); }
 function openContacts() { router.push('/contacts'); }
 function openCanvas() { router.push('/canvas'); }
 function openNotes() { router.push('/notes'); }
+function openStorage() { router.push('/storage'); }
 
 const DEFAULT_SIDEBAR_MENU = [
   { id: 'chats', visible: true },
@@ -406,7 +411,8 @@ const DEFAULT_SIDEBAR_MENU = [
   { id: 'notifications', visible: true },
   { id: 'admin', visible: true },
   { id: 'canvas', visible: true },
-  { id: 'notes', visible: true }
+  { id: 'notes', visible: true },
+  { id: 'storage', visible: true }
 ];
 
 const SIDEBAR_STORAGE_KEY = 'edgechat_sidebar_menu_config_v1';
@@ -542,6 +548,17 @@ const sidebarMenuItemsMap = computed(() => ({
     isCurrent: isNotesView.value,
     class: 'right-sidebar-action right-sidebar-action--labeled tooltip',
     ariaLabel: t('nav.notes'),
+    available: true
+  },
+  storage: {
+    id: 'storage',
+    label: t('nav.storage'),
+    tooltip: t('nav.storage'),
+    icon: FolderArchive,
+    action: openStorage,
+    isCurrent: isStorageView.value,
+    class: 'right-sidebar-action right-sidebar-action--labeled tooltip',
+    ariaLabel: t('nav.storage'),
     available: true
   }
 }));
@@ -823,6 +840,7 @@ watch(
       'chat-layout--contacts': isContactsView,
       'chat-layout--canvas': isCanvasView,
       'chat-layout--notes': isNotesView,
+      'chat-layout--storage': isStorageView,
       'chat-layout--embedded': isEmbeddedView
     }"
   >
@@ -1016,6 +1034,20 @@ watch(
           title="Notes"
           allow="clipboard-read; clipboard-write; fullscreen"
         />
+        <button
+          v-if="isMobileViewport"
+          type="button"
+          class="embedded-mobile-menu"
+          :aria-label="t('nav.openNavigation')"
+          @click="showMobileNavigation = true"
+        >
+          <Menu :size="22" aria-hidden="true" />
+        </button>
+      </div>
+
+      <!-- 沉浸式内嵌：文件存储 -->
+      <div v-if="storageVisited" v-show="isStorageView" class="embedded-container">
+        <StorageWorkspace />
         <button
           v-if="isMobileViewport"
           type="button"
@@ -1268,12 +1300,13 @@ watch(
       :notifications-enabled="notificationsEnabled"
       :notification-label="notificationActionLabel"
       :notification-disabled="notificationToggleDisabled"
-      :active-view="isContactsView ? 'contacts' : (isCanvasView ? 'canvas' : (isNotesView ? 'notes' : 'chat'))"
+      :active-view="isContactsView ? 'contacts' : (isCanvasView ? 'canvas' : (isNotesView ? 'notes' : (isStorageView ? 'storage' : 'chat')))"
       @close="closeMobileNavigation"
       @chat="navigateFromMobileDrawer(openChat)"
       @contacts="navigateFromMobileDrawer(openContacts)"
       @canvas="navigateFromMobileDrawer(openCanvas)"
       @notes="navigateFromMobileDrawer(openNotes)"
+      @storage="navigateFromMobileDrawer(openStorage)"
       @settings="navigateFromMobileDrawer(openSettings)"
       @admin="navigateFromMobileDrawer(openAdmin)"
       @notification="toggleNotifications"

@@ -133,6 +133,7 @@ export default {
   'nav.personalSettings': '个人设置',
   'nav.canvas': '在线画布',
   'nav.notes': '记事本功能',
+  'nav.storage': '文件存储',
   'nav.customizeMenu': '自定义导航菜单',
   'nav.resetMenu': '恢复默认排序',
   'nav.menuCustomizerTitle': '自定义导航菜单',

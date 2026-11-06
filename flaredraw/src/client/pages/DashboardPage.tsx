@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import { api, type Drawing } from '@/client/lib/api-client'
 import { useThemeContext } from '@/client/components/ThemeProvider'
 import { NotesWorkspace } from '@/client/components/notes/NotesWorkspace'
-import { AiAgentMcpModal } from '@/client/components/AiAgentMcpModal'
 
 const themeIcons: Record<string, string> = {
   light: '☀️',
@@ -16,7 +15,6 @@ export function DashboardPage() {
   const [activeTab, setActiveTab] = useState<'drawings' | 'notes'>(initialTab)
   const [drawings, setDrawings] = useState<Drawing[]>([])
   const [loading, setLoading] = useState(true)
-  const [isMcpModalOpen, setIsMcpModalOpen] = useState(false)
   const navigate = useNavigate()
   const { theme, cycleTheme } = useThemeContext()
 
@@ -101,16 +99,6 @@ export function DashboardPage() {
 
           {/* Right Header Actions */}
           <div className="flex items-center gap-2.5">
-            {/* 🤖 AI Agent (MCP) Entrance Button */}
-            <button
-              onClick={() => setIsMcpModalOpen(true)}
-              className="flex items-center gap-1.5 rounded-lg border border-purple-200 bg-purple-50/80 px-3 py-1.5 text-xs font-semibold text-purple-700 shadow-xs transition-all hover:bg-purple-100 hover:border-purple-300 active:scale-95 dark:border-purple-800/80 dark:bg-purple-950/50 dark:text-purple-300 dark:hover:bg-purple-900/60 cursor-pointer"
-              title="配置与连接 AI Agent MCP 助手"
-            >
-              <span className="text-sm">🤖</span>
-              <span>AI Agent (MCP) 接入</span>
-            </button>
-
             {activeTab === 'drawings' && (
               <button
                 onClick={handleNew}
@@ -209,9 +197,6 @@ export function DashboardPage() {
       ) : (
         <NotesWorkspace />
       )}
-
-      {/* AI Agent (MCP) Modal */}
-      <AiAgentMcpModal isOpen={isMcpModalOpen} onClose={() => setIsMcpModalOpen(false)} />
     </div>
   )
 }

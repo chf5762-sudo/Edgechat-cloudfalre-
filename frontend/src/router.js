@@ -33,6 +33,18 @@ const router = createRouter({
       meta: { transition: 'page', workspace: true }
     },
     {
+      path: '/canvas',
+      name: 'canvas',
+      component: () => import('./pages/ChatPage.vue'),
+      meta: { transition: 'page', workspace: true }
+    },
+    {
+      path: '/notes',
+      name: 'notes',
+      component: () => import('./pages/ChatPage.vue'),
+      meta: { transition: 'page', workspace: true }
+    },
+    {
       path: '/admin',
       component: () => import('./pages/AdminPage.vue'),
       meta: { admin: true, transition: 'page' },

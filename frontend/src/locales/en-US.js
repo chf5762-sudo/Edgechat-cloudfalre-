@@ -152,6 +152,8 @@ export default {
   'settings.confirmCrop': 'Confirm crop',
   'nav.admin': 'Admin',
   'nav.personalSettings': 'Personal settings',
+  'nav.canvas': 'Canvas',
+  'nav.notes': 'Notes',
   'nav.openNavigation': 'Open navigation',
   'nav.githubRepository': 'GitHub repository',
   'nav.openGithubRepository': 'Open the EdgeChat GitHub repository',

@@ -225,6 +225,8 @@ export default {
   "settings.confirmCrop": "確認裁剪",
   "nav.admin": "管理後臺",
   "nav.personalSettings": "個人設置",
+  "nav.canvas": "在線畫布",
+  "nav.notes": "記事本功能",
   "nav.openNavigation": "打開導航",
   "nav.githubRepository": "GitHub 倉庫",
   "nav.openGithubRepository": "打開 EdgeChat GitHub 倉庫",

@@ -1,5 +1,5 @@
 <script setup>
-import { Bell, BellOff, ContactRound, LayoutDashboard, LogOut, MessageCircle, Settings, X } from '@lucide/vue';
+import { Bell, BellOff, ContactRound, LayoutDashboard, LogOut, MessageCircle, NotebookPen, Palette, Settings, X } from '@lucide/vue';
 import { ref, toRef } from 'vue';
 import { useOverlayLifecycle } from '../../composables/useOverlayLifecycle.js';
 import { t } from '../../i18n.js';
@@ -16,7 +16,7 @@ const props = defineProps({
   activeView: { type: String, default: 'chat' }
 });
 
-const emit = defineEmits(['close', 'chat', 'contacts', 'settings', 'admin', 'notification', 'logout']);
+const emit = defineEmits(['close', 'chat', 'contacts', 'canvas', 'notes', 'settings', 'admin', 'notification', 'logout']);
 const drawerEl = ref(null);
 
 useOverlayLifecycle({
@@ -59,10 +59,6 @@ useOverlayLifecycle({
               <ContactRound :size="21" aria-hidden="true" />
               <span>{{ t('contacts.title') }}</span>
             </button>
-            <button type="button" @click="emit('settings')">
-              <Settings :size="21" aria-hidden="true" />
-              <span>{{ t('nav.personalSettings') }}</span>
-            </button>
             <button
               type="button"
               :disabled="notificationDisabled"
@@ -76,6 +72,18 @@ useOverlayLifecycle({
             <button v-if="showAdmin" type="button" @click="emit('admin')">
               <LayoutDashboard :size="21" aria-hidden="true" />
               <span>{{ t('nav.admin') }}</span>
+            </button>
+            <button type="button" :aria-current="activeView === 'canvas' ? 'page' : undefined" @click="emit('canvas')">
+              <Palette :size="21" aria-hidden="true" />
+              <span>{{ t('nav.canvas') }}</span>
+            </button>
+            <button type="button" :aria-current="activeView === 'notes' ? 'page' : undefined" @click="emit('notes')">
+              <NotebookPen :size="21" aria-hidden="true" />
+              <span>{{ t('nav.notes') }}</span>
+            </button>
+            <button type="button" @click="emit('settings')">
+              <Settings :size="21" aria-hidden="true" />
+              <span>{{ t('nav.personalSettings') }}</span>
             </button>
             <a href="https://github.com/aozorae/Edgechat" target="_blank" rel="noopener noreferrer">
               <img src="/github.svg" width="21" height="21" alt="" />

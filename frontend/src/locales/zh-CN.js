@@ -131,6 +131,8 @@ export default {
   'settings.confirmCrop': '确认裁剪',
   'nav.admin': '管理后台',
   'nav.personalSettings': '个人设置',
+  'nav.canvas': '在线画布',
+  'nav.notes': '记事本功能',
   'nav.openNavigation': '打开导航',
   'nav.githubRepository': 'GitHub 仓库',
   'nav.openGithubRepository': '打开 EdgeChat GitHub 仓库',

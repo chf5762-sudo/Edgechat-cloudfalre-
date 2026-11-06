@@ -1,5 +1,5 @@
 <script setup>
-import { ArrowLeft, Ban, Bell, BellOff, ContactRound, Menu, MessageCircle, Phone, Settings, UploadCloud, UsersRound } from '@lucide/vue';
+import { ArrowLeft, Ban, Bell, BellOff, ContactRound, LogOut, Menu, MessageCircle, NotebookPen, Palette, Phone, Settings, UploadCloud, UsersRound } from '@lucide/vue';
 import { useChatFileDrop } from '../composables/useChatFileDrop.js';
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -67,7 +67,17 @@ const joiningPublicGroup = ref(false);
 const session = computed(() => store.session);
 const showAdminEntry = computed(() => Boolean(session.value?.canAccessAdmin));
 const isContactsView = computed(() => route.name === 'contacts');
+const isCanvasView = computed(() => route.name === 'canvas');
+const isNotesView = computed(() => route.name === 'notes');
+const isEmbeddedView = computed(() => isCanvasView.value || isNotesView.value);
+const isChatView = computed(() => !isContactsView.value && !isEmbeddedView.value);
 const contactsVisited = ref(isContactsView.value);
+const canvasVisited = ref(isCanvasView.value);
+const notesVisited = ref(isNotesView.value);
+
+watch(isContactsView, (val) => { if (val) contactsVisited.value = true; });
+watch(isCanvasView, (val) => { if (val) canvasVisited.value = true; });
+watch(isNotesView, (val) => { if (val) notesVisited.value = true; });
 const inboxActiveRoom = computed(() => isContactsView.value ? null : activeRoom.value);
 
 const { activeRoomKey, canManageActiveRoom, applyActiveChannel, selectDm, roomLabel, roomSubtitle } =
@@ -386,6 +396,8 @@ function openAdmin() { router.push('/admin'); }
 function openSettings() { router.push('/settings'); }
 function openChat() { router.push('/'); }
 function openContacts() { router.push('/contacts'); }
+function openCanvas() { router.push('/canvas'); }
+function openNotes() { router.push('/notes'); }
 let nativeRoomNavigationReady = false;
 function openNativeRoom() {
   if (!nativeRoomNavigationReady) return;
@@ -548,7 +560,10 @@ watch(
       'chat-layout--mobile-list': isMobileViewport && mobileView === 'list',
       'chat-layout--mobile-chat': isMobileViewport && mobileView === 'chat',
       'chat-layout--calling': Boolean(callState.call),
-      'chat-layout--contacts': isContactsView
+      'chat-layout--contacts': isContactsView,
+      'chat-layout--canvas': isCanvasView,
+      'chat-layout--notes': isNotesView,
+      'chat-layout--embedded': isEmbeddedView
     }"
   >
     <!-- 导航与会话列表保持独立，切换通讯录时不破坏现有聊天工作区。 -->
@@ -558,10 +573,10 @@ watch(
           <button
             type="button"
             class="right-sidebar-action right-sidebar-action--labeled tooltip"
-            :class="{ 'right-sidebar-action--current': !isContactsView }"
+            :class="{ 'right-sidebar-action--current': isChatView }"
             :data-tooltip="t('nav.chats')"
             :aria-label="t('nav.chats')"
-            :aria-current="!isContactsView ? 'page' : undefined"
+            :aria-current="isChatView ? 'page' : undefined"
             @click="openChat"
           >
             <MessageCircle :size="20" aria-hidden="true" />
@@ -578,16 +593,6 @@ watch(
           >
             <ContactRound :size="20" aria-hidden="true" />
             <span class="right-sidebar-action__label">{{ t('contacts.title') }}</span>
-          </button>
-          <button
-            type="button"
-            class="right-sidebar-action right-sidebar-action--labeled right-sidebar-action--settings tooltip"
-            :data-tooltip="t('nav.personalSettings')"
-            :aria-label="t('nav.personalSettings')"
-            @click="openSettings"
-          >
-            <Settings :size="20" aria-hidden="true" />
-            <span class="right-sidebar-action__label">{{ t('nav.personalSettings') }}</span>
           </button>
           <button
             type="button"
@@ -618,17 +623,45 @@ watch(
             </svg>
             <span class="right-sidebar-action__label">{{ t('nav.admin') }}</span>
           </button>
+          <button
+            type="button"
+            class="right-sidebar-action right-sidebar-action--labeled tooltip"
+            :class="{ 'right-sidebar-action--current': isCanvasView }"
+            :data-tooltip="t('nav.canvas')"
+            :aria-label="t('nav.canvas')"
+            :aria-current="isCanvasView ? 'page' : undefined"
+            @click="openCanvas"
+          >
+            <Palette :size="20" aria-hidden="true" />
+            <span class="right-sidebar-action__label">{{ t('nav.canvas') }}</span>
+          </button>
+          <button
+            type="button"
+            class="right-sidebar-action right-sidebar-action--labeled tooltip"
+            :class="{ 'right-sidebar-action--current': isNotesView }"
+            :data-tooltip="t('nav.notes')"
+            :aria-label="t('nav.notes')"
+            :aria-current="isNotesView ? 'page' : undefined"
+            @click="openNotes"
+          >
+            <NotebookPen :size="20" aria-hidden="true" />
+            <span class="right-sidebar-action__label">{{ t('nav.notes') }}</span>
+          </button>
         </div>
 
         <div class="right-sidebar-section right-sidebar-user-group">
-          <button type="button" class="right-sidebar-user tooltip" :data-tooltip="t('nav.personalSettings')" :aria-label="t('nav.personalSettings')" @click="router.push('/settings')">
+          <button type="button" class="right-sidebar-user tooltip" :data-tooltip="session?.displayName || t('nav.personalSettings')" :aria-label="session?.displayName || t('nav.personalSettings')" @click="openSettings">
             <UiAvatar :src="session?.avatarUrl" :fallback="session?.displayName?.[0] || 'U'" size="sm" />
           </button>
-          <button type="button" class="right-sidebar-action right-sidebar-action--danger tooltip" :data-tooltip="t('auth.signOut')" :aria-label="t('auth.signOut')" @click="logout">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8">
-              <title>{{ t('auth.signOut') }}</title>
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
-            </svg>
+          <button
+            type="button"
+            class="right-sidebar-action right-sidebar-action--labeled right-sidebar-action--settings tooltip"
+            :data-tooltip="t('nav.personalSettings')"
+            :aria-label="t('nav.personalSettings')"
+            @click="openSettings"
+          >
+            <Settings :size="20" aria-hidden="true" />
+            <span class="right-sidebar-action__label">{{ t('nav.personalSettings') }}</span>
           </button>
         </div>
       </div>
@@ -707,203 +740,267 @@ watch(
 
     <!-- Right Main Chat Window -->
     <main
-      v-if="!isContactsView"
-      class="chat-main"
-      :class="{ 'chat-main--drag-over': isChatDragging }"
+      v-if="!isContactsView" class="chat-main"
+      :class="{
+        'chat-main--drag-over': isChatDragging,
+        'chat-main--embedded': isEmbeddedView
+      }"
       @dragenter="handleDragEnter"
       @dragover="handleDragOver"
       @dragleave="handleDragLeave"
       @drop="handleDrop"
     >
-      <div v-if="isChatDragging && activeRoom && !activeDmBlockedByMe" class="chat-drop-overlay">
-        <div class="chat-drop-overlay__card">
-          <div class="chat-drop-overlay__icon">
-            <UploadCloud :size="44" :stroke-width="1.8" />
-          </div>
-          <h3 class="chat-drop-overlay__title">松开鼠标即可添加附件</h3>
-          <p class="chat-drop-overlay__subtitle">文件将添加到底部待发送列表中</p>
-        </div>
+      <!-- 沉浸式内嵌：在线画布 -->
+      <div v-if="canvasVisited" v-show="isCanvasView" class="embedded-container">
+        <iframe
+          src="https://flaredraw.chf5762-32d.workers.dev/?key=576257"
+          class="embedded-iframe"
+          title="Canvas"
+          allow="clipboard-read; clipboard-write; fullscreen"
+        />
+        <button
+          v-if="isMobileViewport"
+          type="button"
+          class="embedded-mobile-menu"
+          :aria-label="t('nav.openNavigation')"
+          @click="showMobileNavigation = true"
+        >
+          <Menu :size="22" aria-hidden="true" />
+        </button>
       </div>
-      <template v-if="activeRoom">
-        <header class="chat-header" :class="{ 'chat-header--dm': activeRoom.kind === 'dm' && !isCapacitorAndroid }">
-          <button
-            type="button"
-            class="chat-header__back"
-            :aria-label="t('chat.backToConversationList')"
-            @click="returnToMobileConversationList"
-          >
-            <ArrowLeft :size="24" aria-hidden="true" />
-          </button>
-          <button
-            v-if="activeRoom.kind === 'dm'"
-            ref="profileTargetHeader"
-            type="button"
-            class="profile-avatar-trigger"
-            :aria-label="t('profile.view', { name: roomLabel(activeRoom) })"
-            @click="openLocalUserProfile(activeRoom.otherUser)"
-          >
-            <UiAvatar :src="activeRoomAvatar" :fallback="roomLabel(activeRoom)?.[0] || '?'" size="sm" />
-          </button>
-          <UiAvatar
-            v-else
-            class="chat-header__avatar"
-            :src="activeRoomAvatar"
-            :fallback="roomLabel(activeRoom)?.[0] || '?'"
-            size="sm"
-          />
-          <div class="chat-header__identity">
-            <h2>{{ roomLabel(activeRoom) }}</h2>
-            <span>{{ activeRoomSubtitle }}</span>
-          </div>
-          <div class="chat-header__actions">
-            <div v-if="activeRoom.kind === 'dm' && !isCapacitorAndroid" class="chat-call-controls">
-              <button type="button" class="chat-header__button" :title="t('call.voice')" :aria-label="t('call.voice')" :disabled="Boolean(callState.call) || activeDmBlockedByMe" @click="voiceCall.start(activeRoom)"><Phone :size="19" aria-hidden="true" /></button>
-              <select class="chat-call-mode" :value="callMode" :aria-label="t('call.mode')" :title="t('call.mode')" :disabled="['permission', 'calling'].includes(callState.phase)" @change="voiceCall.changeMode($event.target.value)">
-                <option value="auto">P2P</option><option value="relay">TURN</option>
-              </select>
+
+      <!-- 沉浸式内嵌：记事本功能 -->
+      <div v-if="notesVisited" v-show="isNotesView" class="embedded-container">
+        <iframe
+          src="https://flaredraw.chf5762-32d.workers.dev/?tab=notes&key=576257"
+          class="embedded-iframe"
+          title="Notes"
+          allow="clipboard-read; clipboard-write; fullscreen"
+        />
+        <button
+          v-if="isMobileViewport"
+          type="button"
+          class="embedded-mobile-menu"
+          :aria-label="t('nav.openNavigation')"
+          @click="showMobileNavigation = true"
+        >
+          <Menu :size="22" aria-hidden="true" />
+        </button>
+      </div>
+
+      <template v-if="!isEmbeddedView">
+        <div v-if="isChatDragging && activeRoom && !activeDmBlockedByMe" class="chat-drop-overlay">
+          <div class="chat-drop-overlay__card">
+            <div class="chat-drop-overlay__icon">
+              <UploadCloud :size="44" :stroke-width="1.8" />
             </div>
-            <div
-              class="chat-header__status"
-              :class="wsConnected ? 'online' : 'offline'"
-              :title="wsConnected ? t('chat.connected') : t('chat.connecting')"
-              :aria-label="wsConnected ? t('chat.connected') : t('chat.connecting')"
-              role="status"
-            ></div>
+            <h3 class="chat-drop-overlay__title">松开鼠标即可添加附件</h3>
+            <p class="chat-drop-overlay__subtitle">文件将添加到底部待发送列表中</p>
+          </div>
+        </div>
+        <template v-if="activeRoom">
+          <header class="chat-header" :class="{ 'chat-header--dm': activeRoom.kind === 'dm' && !isCapacitorAndroid }">
+            <button
+              type="button"
+              class="chat-header__back"
+              :aria-label="t('chat.backToConversationList')"
+              @click="returnToMobileConversationList"
+            >
+              <ArrowLeft :size="24" aria-hidden="true" />
+            </button>
             <button
               v-if="activeRoom.kind === 'dm'"
+              ref="profileTargetHeader"
+              type="button"
+              class="profile-avatar-trigger"
+              :aria-label="t('profile.view', { name: roomLabel(activeRoom) })"
+              @click="openLocalUserProfile(activeRoom.otherUser)"
+            >
+              <UiAvatar :src="activeRoomAvatar" :fallback="roomLabel(activeRoom)?.[0] || '?'" size="sm" />
+            </button>
+            <UiAvatar
+              v-else
+              class="chat-header__avatar"
+              :src="activeRoomAvatar"
+              :fallback="roomLabel(activeRoom)?.[0] || '?'"
+              size="sm"
+            />
+            <div class="chat-header__identity">
+              <h2>{{ roomLabel(activeRoom) }}</h2>
+              <span>{{ activeRoomSubtitle }}</span>
+            </div>
+            <div class="chat-header__actions">
+              <div v-if="activeRoom.kind === 'dm' && !isCapacitorAndroid" class="chat-call-controls">
+                <button type="button" class="chat-header__button" :title="t('call.voice')" :aria-label="t('call.voice')" :disabled="Boolean(callState.call) || activeDmBlockedByMe" @click="voiceCall.start(activeRoom)"><Phone :size="19" aria-hidden="true" /></button>
+                <select class="chat-call-mode" :value="callMode" :aria-label="t('call.mode')" :title="t('call.mode')" :disabled="['permission', 'calling'].includes(callState.phase)" @change="voiceCall.changeMode($event.target.value)">
+                  <option value="auto">P2P</option><option value="relay">TURN</option>
+                </select>
+              </div>
+              <div
+                class="chat-header__status"
+                :class="wsConnected ? 'online' : 'offline'"
+                :title="wsConnected ? t('chat.connected') : t('chat.connecting')"
+                :aria-label="wsConnected ? t('chat.connected') : t('chat.connecting')"
+                role="status"
+              ></div>
+              <button
+                v-if="activeRoom.kind === 'dm'"
+                type="button"
+                class="chat-header__button chat-header__button--danger"
+                :class="{ 'chat-header__button--blocked': activeDmBlockedByMe }"
+                :title="activeDmBlockedByMe ? t('chat.unblockUser') : t('chat.blockUser')"
+                :aria-label="activeDmBlockedByMe ? t('chat.unblockUser') : t('chat.blockUser')"
+                :aria-pressed="activeDmBlockedByMe"
+                :aria-busy="userBlockSaving"
+                :disabled="userBlockSaving"
+                @click="toggleUserBlock"
+              >
+                <Ban :size="19" aria-hidden="true" />
+                <span>{{ activeDmBlockedByMe ? t('chat.unblock') : t('chat.block') }}</span>
+              </button>
+              <button
+                type="button"
+                class="chat-header__button"
+                :class="{ 'chat-header__button--active': activeRoomMuted }"
+                :title="activeRoomMuted ? t('chat.unmuteCurrent') : t('chat.muteCurrent')"
+                :aria-label="activeRoomMuted ? t('chat.unmuteCurrent') : t('chat.muteCurrent')"
+                :aria-pressed="activeRoomMuted"
+                @click="toggleActiveRoomMute"
+              >
+                <BellOff v-if="activeRoomMuted" :size="19" aria-hidden="true" />
+                <Bell v-else :size="19" aria-hidden="true" />
+                <span>{{ activeRoomMuted ? t('chat.mutedShort') : t('chat.mute') }}</span>
+              </button>
+              <button
+                v-if="activeRoom.kind !== 'dm'"
+                type="button"
+                class="chat-header__button"
+                :aria-label="showMemberPanel ? t('chat.closeMembers') : t('chat.viewMembers')"
+                :aria-expanded="showMemberPanel"
+                :title="showMemberPanel ? t('chat.closeMembers') : t('chat.viewMembers')"
+                @click="toggleMemberPanel"
+              >
+                <UsersRound :size="19" aria-hidden="true" />
+                <span>{{ showMemberPanel ? t('chat.collapseMembers') : t('chat.members') }}</span>
+              </button>
+              <button
+                v-if="canManageActiveRoom"
+                type="button"
+                class="chat-header__button"
+                :aria-label="t('chat.openGroupSettings')"
+                :title="t('chat.openGroupSettings')"
+                @click="openGroupEditor"
+              >
+                <Settings :size="19" aria-hidden="true" />
+                <span>{{ t('chat.groupSettings') }}</span>
+              </button>
+              <LanguageSwitch class="chat-header__language-switch" />
+              <button
+                type="button"
+                class="chat-header__button chat-header__button--danger"
+                :title="t('auth.signOut')"
+                :aria-label="t('auth.signOut')"
+                @click="logout"
+              >
+                <LogOut :size="19" aria-hidden="true" />
+                <span>{{ t('auth.signOut') }}</span>
+              </button>
+            </div>
+          </header>
+
+          <RoomBridgeNotice v-if="activeRoom.kind !== 'dm'" :room-id="Number(activeRoom.id)" />
+          <PinnedMessageBar
+            v-if="pinnedMessage && activeRoom.kind !== 'dm'"
+            :message="pinnedMessage"
+            :can-unpin="canPinMessages"
+            @reveal="revealPinnedMessage"
+            @unpin="unpinMessage(pinnedMessage.id)"
+          />
+
+          <section ref="messagesEl" class="chat-messages">
+            <button v-if="messages.length" type="button" class="load-more-btn" @click="loadOlder">{{ t('chat.loadEarlier') }}</button>
+            <div v-if="loading" class="messages-hint">{{ t('chat.loadingMessages') }}</div>
+            <div v-else-if="!messages.length" class="messages-hint">{{ t('chat.noMessages') }}</div>
+
+            <MessageList
+              :messages="messages"
+              :current-user-id="session?.userId"
+              :is-direct="activeRoom.kind === 'dm'"
+              :highlighted-message-id="highlightedMessageId"
+              @profile="openSenderProfile"
+              @reveal="revealMessage"
+              @contextmenu="openMessageContextMenu"
+              @long-press="startMessageLongPress"
+              @track-press="trackMessageLongPress"
+              @cancel-press="cancelMessageLongPress"
+            />
+          </section>
+
+          <MessageContextMenu
+            :open="Boolean(messageMenu.message)"
+            :x="messageMenu.x"
+            :y="messageMenu.y"
+            :can-pin="canPinMessages"
+            :can-delete="canModerateMessages"
+            :can-copy="Boolean(messageMenu.message?.content)"
+            :pinned="selectedMessageIsPinned"
+            @close="closeMessageMenu"
+            @copy="copySelectedMessage"
+            @reply="replyToSelectedMessage"
+            @pin="pinSelectedMessage"
+            @unpin="unpinSelectedMessage"
+            @delete="confirmDeleteMessage"
+          />
+
+          <MessageComposer
+            ref="messageComposer"
+            v-model="composerText"
+            :pending-attachments="pendingAttachments"
+            :sending="sending"
+            :disabled="!activeRoom || activeDmBlockedByMe"
+            :error="error"
+            :mention-candidates="mentionCandidates"
+            :replying-to="replyingTo"
+            :context-key="activeRoomKey"
+            @send="sendComposerMessage"
+            @voice-recorded="sendComposerVoice"
+            @cancel-reply="replyingTo = null"
+            @upload="uploadAttachment"
+            @clear-attachment="clearAttachment"
+            @retry-attachment="retryAttachment"
+          />
+        </template>
+
+        <div v-else class="chat-empty">
+          <div class="chat-empty__top-actions">
+            <LanguageSwitch class="chat-empty__language-switch" />
+            <button
               type="button"
               class="chat-header__button chat-header__button--danger"
-              :class="{ 'chat-header__button--blocked': activeDmBlockedByMe }"
-              :title="activeDmBlockedByMe ? t('chat.unblockUser') : t('chat.blockUser')"
-              :aria-label="activeDmBlockedByMe ? t('chat.unblockUser') : t('chat.blockUser')"
-              :aria-pressed="activeDmBlockedByMe"
-              :aria-busy="userBlockSaving"
-              :disabled="userBlockSaving"
-              @click="toggleUserBlock"
+              :title="t('auth.signOut')"
+              :aria-label="t('auth.signOut')"
+              @click="logout"
             >
-              <Ban :size="19" aria-hidden="true" />
-              <span>{{ activeDmBlockedByMe ? t('chat.unblock') : t('chat.block') }}</span>
+              <LogOut :size="19" aria-hidden="true" />
+              <span>{{ t('auth.signOut') }}</span>
             </button>
-            <button
-              type="button"
-              class="chat-header__button"
-              :class="{ 'chat-header__button--active': activeRoomMuted }"
-              :title="activeRoomMuted ? t('chat.unmuteCurrent') : t('chat.muteCurrent')"
-              :aria-label="activeRoomMuted ? t('chat.unmuteCurrent') : t('chat.muteCurrent')"
-              :aria-pressed="activeRoomMuted"
-              @click="toggleActiveRoomMute"
-            >
-              <BellOff v-if="activeRoomMuted" :size="19" aria-hidden="true" />
-              <Bell v-else :size="19" aria-hidden="true" />
-              <span>{{ activeRoomMuted ? t('chat.mutedShort') : t('chat.mute') }}</span>
-            </button>
-            <button
-              v-if="activeRoom.kind !== 'dm'"
-              type="button"
-              class="chat-header__button"
-              :aria-label="showMemberPanel ? t('chat.closeMembers') : t('chat.viewMembers')"
-              :aria-expanded="showMemberPanel"
-              :title="showMemberPanel ? t('chat.closeMembers') : t('chat.viewMembers')"
-              @click="toggleMemberPanel"
-            >
-              <UsersRound :size="19" aria-hidden="true" />
-              <span>{{ showMemberPanel ? t('chat.collapseMembers') : t('chat.members') }}</span>
-            </button>
-            <button
-              v-if="canManageActiveRoom"
-              type="button"
-              class="chat-header__button"
-              :aria-label="t('chat.openGroupSettings')"
-              :title="t('chat.openGroupSettings')"
-              @click="openGroupEditor"
-            >
-              <Settings :size="19" aria-hidden="true" />
-              <span>{{ t('chat.groupSettings') }}</span>
-            </button>
-            <LanguageSwitch class="chat-header__language-switch" />
           </div>
-        </header>
-
-        <RoomBridgeNotice v-if="activeRoom.kind !== 'dm'" :room-id="Number(activeRoom.id)" />
-        <PinnedMessageBar
-          v-if="pinnedMessage && activeRoom.kind !== 'dm'"
-          :message="pinnedMessage"
-          :can-unpin="canPinMessages"
-          @reveal="revealPinnedMessage"
-          @unpin="unpinMessage(pinnedMessage.id)"
-        />
-
-        <section ref="messagesEl" class="chat-messages">
-          <button v-if="messages.length" type="button" class="load-more-btn" @click="loadOlder">{{ t('chat.loadEarlier') }}</button>
-          <div v-if="loading" class="messages-hint">{{ t('chat.loadingMessages') }}</div>
-          <div v-else-if="!messages.length" class="messages-hint">{{ t('chat.noMessages') }}</div>
-
-          <MessageList
-            :messages="messages"
-            :current-user-id="session?.userId"
-            :is-direct="activeRoom.kind === 'dm'"
-            :highlighted-message-id="highlightedMessageId"
-            @profile="openSenderProfile"
-            @reveal="revealMessage"
-            @contextmenu="openMessageContextMenu"
-            @long-press="startMessageLongPress"
-            @track-press="trackMessageLongPress"
-            @cancel-press="cancelMessageLongPress"
-          />
-        </section>
-
-        <MessageContextMenu
-          :open="Boolean(messageMenu.message)"
-          :x="messageMenu.x"
-          :y="messageMenu.y"
-		  :can-pin="canPinMessages"
-			  :can-delete="canModerateMessages"
-			  :can-copy="Boolean(messageMenu.message?.content)"
-			  :pinned="selectedMessageIsPinned"
-			  @close="closeMessageMenu"
-			  @copy="copySelectedMessage"
-			  @reply="replyToSelectedMessage"
-          @pin="pinSelectedMessage"
-          @unpin="unpinSelectedMessage"
-          @delete="confirmDeleteMessage"
-        />
-
-		<MessageComposer
-		  ref="messageComposer"
-		  v-model="composerText"
-		  :pending-attachments="pendingAttachments"
-		  :sending="sending"
-			  :disabled="!activeRoom || activeDmBlockedByMe"
-			  :error="error"
-			  :mention-candidates="mentionCandidates"
-			  :replying-to="replyingTo"
-			  :context-key="activeRoomKey"
-			  @send="sendComposerMessage"
-			  @voice-recorded="sendComposerVoice"
-			  @cancel-reply="replyingTo = null"
-		  @upload="uploadAttachment"
-		  @clear-attachment="clearAttachment"
-		  @retry-attachment="retryAttachment"
-		/>
-      </template>
-
-      <div v-else class="chat-empty">
-        <LanguageSwitch class="chat-empty__language-switch" />
-        <div class="empty-content">
-          <div class="empty-brand">
-            <MessageCircle :size="36" :stroke-width="1.5" aria-hidden="true" />
-            <span class="empty-title">EdgeChat</span>
+          <div class="empty-content">
+            <div class="empty-brand">
+              <MessageCircle :size="36" :stroke-width="1.5" aria-hidden="true" />
+              <span class="empty-title">EdgeChat</span>
+            </div>
+            <p>{{ t('chat.noConversationSelected') }}</p>
+            <button type="button" class="empty-start" @click="openAddConversation">
+              <MessageCircle :size="18" aria-hidden="true" />
+              {{ t('chat.addPeople') }}
+            </button>
           </div>
-          <p>{{ t('chat.noConversationSelected') }}</p>
-          <button type="button" class="empty-start" @click="openAddConversation">
-            <MessageCircle :size="18" aria-hidden="true" />
-            {{ t('chat.addPeople') }}
-          </button>
         </div>
-      </div>
+      </template>
     </main>
 
-    <div v-if="!isContactsView && showMemberPanel" class="room-management-layer" @click.self="closeMemberPanel">
+    <div v-if="!isContactsView && !isEmbeddedView && showMemberPanel" class="room-management-layer" @click.self="closeMemberPanel">
       <aside class="room-management-sidebar">
         <MemberPanel
           :room="activeRoom"
@@ -932,10 +1029,12 @@ watch(
       :notifications-enabled="notificationsEnabled"
       :notification-label="notificationActionLabel"
       :notification-disabled="notificationToggleDisabled"
-      :active-view="isContactsView ? 'contacts' : 'chat'"
+      :active-view="isContactsView ? 'contacts' : (isCanvasView ? 'canvas' : (isNotesView ? 'notes' : 'chat'))"
       @close="closeMobileNavigation"
       @chat="navigateFromMobileDrawer(openChat)"
       @contacts="navigateFromMobileDrawer(openContacts)"
+      @canvas="navigateFromMobileDrawer(openCanvas)"
+      @notes="navigateFromMobileDrawer(openNotes)"
       @settings="navigateFromMobileDrawer(openSettings)"
       @admin="navigateFromMobileDrawer(openAdmin)"
       @notification="toggleNotifications"
@@ -1042,7 +1141,8 @@ watch(
   border-right: 1px solid var(--chat-line);
 }
 
-.chat-layout--contacts .left-sidebar {
+.chat-layout--contacts .left-sidebar,
+.chat-layout--embedded .left-sidebar {
   display: none;
 }
 
@@ -1488,6 +1588,56 @@ watch(
   right: 16px;
 }
 
+.chat-empty__top-actions {
+  position: absolute;
+  top: 10px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 5;
+}
+
+.chat-empty__top-actions .chat-empty__language-switch {
+  position: static;
+  top: auto;
+  right: auto;
+}
+
+.embedded-container {
+  width: 100%;
+  height: 100%;
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.embedded-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
+
+.embedded-mobile-menu {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 20;
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid var(--chat-line);
+  background: var(--chat-paper);
+  color: var(--chat-ink);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+}
+
 .empty-content {
   display: grid;
   justify-items: center;
@@ -1596,6 +1746,15 @@ watch(
   .chat-layout--mobile-list .chat-main,
   .chat-layout--mobile-chat .left-sidebar {
     display: none;
+  }
+
+  .chat-layout--contacts .left-sidebar,
+  .chat-layout--embedded .left-sidebar {
+    display: none;
+  }
+
+  .chat-layout--embedded .chat-main {
+    display: flex;
   }
 
   .sidebar-header {

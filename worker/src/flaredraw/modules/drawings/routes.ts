@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { nanoid } from 'nanoid'
 import { eq, desc } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/d1'
-import { drawings } from '../../db/schema'
+import { drawings } from '../../db/schema.ts'
 
 type Bindings = {
   DB: D1Database
@@ -192,7 +192,8 @@ drawingRoutes.delete('/:id', async (c) => {
     return c.json({ error: 'Not found' }, 404)
   }
 
-  // Delete from R2 and D1
+  // Delete from R2 and D1 (cascade delete shares first to satisfy FK)
+  await db.delete(shares).where(eq(shares.drawingId, id))
   await c.env.STORAGE.delete(drawing.r2Key)
   await db.delete(drawings).where(eq(drawings.id, id))
 

@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { nanoid } from 'nanoid'
 import { eq, desc, and } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/d1'
-import { notes } from '../../db/schema'
+import { notes } from '../../db/schema.ts'
 
 type Bindings = {
   DB: D1Database

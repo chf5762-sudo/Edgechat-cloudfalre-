@@ -1,8 +1,8 @@
 import { Hono } from 'hono'
 import { eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/d1'
-import { apiTokens } from '../../db/schema'
-import { generateToken } from '../../middleware/auth'
+import { apiTokens } from '../../db/schema.ts'
+import { generateToken } from '../../middleware/auth.ts'
 
 type Bindings = {
   DB: D1Database

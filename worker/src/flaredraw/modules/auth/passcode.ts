@@ -1,7 +1,7 @@
 import type { Context } from 'hono'
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
 import { drizzle } from 'drizzle-orm/d1'
-import { users } from '../../db/schema'
+import { users } from '../../db/schema.ts'
 
 export const PASSCODE = '576257'
 export const COOKIE_NAME = 'fd_auth'

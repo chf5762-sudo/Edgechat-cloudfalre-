@@ -1,15 +1,15 @@
 import type { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { drizzle } from 'drizzle-orm/d1'
-import { createAuth } from './modules/auth'
-import { authMiddleware, sessionOnlyMiddleware } from './middleware/auth'
-import { drawingRoutes } from './modules/drawings/routes'
-import { shareRoutes } from './modules/shares/routes'
-import { noteRoutes } from './modules/notes/routes'
-import { apiTokenRoutes } from './modules/api-tokens/routes'
-import { diagramRoutes } from './modules/api/routes'
-import { mcpRoutes } from './modules/mcp/routes'
-import { oauthRoutes, wellKnownRoutes } from './modules/mcp/oauth-routes'
+import { createAuth } from './modules/auth/index.ts'
+import { authMiddleware, sessionOnlyMiddleware } from './middleware/auth.ts'
+import { drawingRoutes } from './modules/drawings/routes.ts'
+import { shareRoutes } from './modules/shares/routes.ts'
+import { noteRoutes } from './modules/notes/routes.ts'
+import { apiTokenRoutes } from './modules/api-tokens/routes.ts'
+import { diagramRoutes } from './modules/api/routes.ts'
+import { mcpRoutes } from './modules/mcp/routes.ts'
+import { oauthRoutes, wellKnownRoutes } from './modules/mcp/oauth-routes.ts'
 import {
   PASSCODE,
   createSessionCookieValue,
@@ -19,7 +19,7 @@ import {
   verifySessionCookieValue,
   DEFAULT_USER,
   ensureDefaultUser,
-} from './modules/auth/passcode'
+} from './modules/auth/passcode.ts'
 
 export function registerFlareDrawRoutes(app: Hono<any>) {
   // .well-known OAuth discovery

@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
-import { createMcpServer, registerResources, registerTools, setContext, deleteContext } from './server'
+import { createMcpServer, registerResources, registerTools, setContext, deleteContext } from './server.ts'
 
 type Bindings = {
   DB: D1Database

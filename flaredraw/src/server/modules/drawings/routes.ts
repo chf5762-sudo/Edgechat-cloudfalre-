@@ -192,7 +192,8 @@ drawingRoutes.delete('/:id', async (c) => {
     return c.json({ error: 'Not found' }, 404)
   }
 
-  // Delete from R2 and D1
+  // Delete from R2 and D1 (cascade delete shares first to satisfy FK)
+  await db.delete(shares).where(eq(shares.drawingId, id))
   await c.env.STORAGE.delete(drawing.r2Key)
   await db.delete(drawings).where(eq(drawings.id, id))
 

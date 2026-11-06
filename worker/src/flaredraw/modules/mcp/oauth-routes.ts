@@ -1,8 +1,8 @@
 import { Hono } from 'hono'
 import { eq, and } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/d1'
-import { hashToken } from '../../middleware/auth'
-import { mcpOAuthClients, mcpOAuthCodes, mcpOAuthTokens, users, accounts } from '../../db/schema'
+import { hashToken } from '../../middleware/auth.ts'
+import { mcpOAuthClients, mcpOAuthCodes, mcpOAuthTokens, users, accounts } from '../../db/schema.ts'
 
 type Bindings = {
   DB: D1Database

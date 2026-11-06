@@ -2,8 +2,8 @@ import { Hono } from 'hono'
 import { nanoid } from 'nanoid'
 import { eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/d1'
-import { drawings, shares } from '../../db/schema'
-import { generatePng } from '../export/png'
+import { drawings, shares } from '../../db/schema.ts'
+import { generatePng } from '../export/png.ts'
 
 type Bindings = {
   DB: D1Database

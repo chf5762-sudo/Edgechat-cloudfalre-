@@ -3,8 +3,8 @@ import { nanoid } from 'nanoid'
 import { eq, desc, and } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/d1'
 import { z } from 'zod'
-import { drawings, shares, notes } from '../../db/schema'
-import { generatePng } from '../export/png'
+import { drawings, shares, notes } from '../../db/schema.ts'
+import { generatePng } from '../export/png.ts'
 
 type Env = {
   DB: D1Database
@@ -99,12 +99,12 @@ For a label "Database" at fontSize 20:
 
 | ID | Name | Style | Use for |
 |----|------|-------|---------|
-| 1 | Virgil | Handwriting | Legacy — use 5 instead |
-| 2 | Helvetica | Sans-serif | Professional/formal diagrams |
+| 2 | Helvetica | Sans-serif / Normal | **Default** — Standard clean normal font |
 | 3 | Cascadia | Monospace | Code, technical labels |
-| 5 | Excalifont | Handwriting | **Default** — casual diagrams |
+| 1 | Virgil | Handwriting | Informal / Hand-drawn |
+| 5 | Excalifont | Handwriting | Informal / Hand-drawn |
 
-**Always use fontFamily: 5** unless specifically asked for a professional style (use 2) or code (use 3).
+**Always use fontFamily: 2 (Normal / Sans-serif)** for standard, professional, clean diagrams.
 
 ## Color Palettes
 
@@ -186,7 +186,7 @@ Text element:
   "width": 160, "height": 27,
   "text": "My Label",
   "fontSize": 20,
-  "fontFamily": 5,
+  "fontFamily": 2,
   "textAlign": "center"
 }
 \`\`\`
@@ -211,6 +211,18 @@ Text element:
 - Decision: rectangles with orange/yellow (NOT diamonds)
 - Vertical flow with arrows
 `
+
+
+function normalizeElementsFont(elements: any[]): any[] {
+  return (elements || []).map((el: any) => {
+    if (el && el.type === 'text') {
+      if (!el.fontFamily || el.fontFamily === 1 || el.fontFamily === 5) {
+        return { ...el, fontFamily: 2 }
+      }
+    }
+    return el
+  })
+}
 
 export function registerTools(server: McpServer) {
   // ─── read_guide ───
@@ -258,9 +270,12 @@ export function registerTools(server: McpServer) {
     'get_drawing',
     'Get full drawing content (Excalidraw JSON) by ID',
     {
-      drawingId: z.string().describe('Drawing ID'),
+      drawingId: z.string().optional().describe('Drawing ID'),
+      id: z.string().optional().describe('Alias for drawingId'),
     },
-    async ({ drawingId }) => {
+    async (args) => {
+      const drawingId = args.drawingId || args.id
+      if (!drawingId) return error('drawingId is required')
       const ctx = getContext('current')
       if (!ctx) return error('No auth context')
 
@@ -299,14 +314,14 @@ export function registerTools(server: McpServer) {
       const db = drizzle(ctx.env.DB)
       const id = nanoid(12)
       const r2Key = `drawings/${ctx.userId}/${id}.excalidraw`
-      const drawingElements = elements || []
+      const drawingElements = normalizeElementsFont(elements || [])
 
       const content = JSON.stringify({
         type: 'excalidraw',
         version: 2,
         source: 'flaredraw',
         elements: drawingElements,
-        appState: { viewBackgroundColor: '#ffffff', ...appState },
+        appState: { viewBackgroundColor: '#ffffff', currentItemFontFamily: 2, ...appState },
         files: {},
       })
 
@@ -325,6 +340,7 @@ export function registerTools(server: McpServer) {
       })
 
       return text({
+        id,
         drawingId: id,
         title: title?.trim() || 'Untitled',
         editUrl: `${ctx.origin}/draw/${id}`,
@@ -337,12 +353,16 @@ export function registerTools(server: McpServer) {
     'update_drawing',
     'Update a drawing\'s content and/or title',
     {
-      drawingId: z.string().describe('Drawing ID to update'),
+      drawingId: z.string().optional().describe('Drawing ID to update'),
+      id: z.string().optional().describe('Alias for drawingId'),
       title: z.string().optional().describe('New title'),
       elements: z.array(z.record(z.unknown())).optional().describe('New Excalidraw elements array'),
       appState: z.record(z.unknown()).optional().describe('New appState'),
     },
-    async ({ drawingId, title, elements, appState }) => {
+    async (args) => {
+      const drawingId = args.drawingId || args.id
+      if (!drawingId) return error('drawingId is required')
+      const { title, elements, appState } = args
       const ctx = getContext('current')
       if (!ctx) return error('No auth context')
 
@@ -396,9 +416,12 @@ export function registerTools(server: McpServer) {
     'delete_drawing',
     'Delete a drawing permanently',
     {
-      drawingId: z.string().describe('Drawing ID to delete'),
+      drawingId: z.string().optional().describe('Drawing ID to delete'),
+      id: z.string().optional().describe('Alias for drawingId'),
     },
-    async ({ drawingId }) => {
+    async (args) => {
+      const drawingId = args.drawingId || args.id
+      if (!drawingId) return error('drawingId is required')
       const ctx = getContext('current')
       if (!ctx) return error('No auth context')
 
@@ -413,6 +436,7 @@ export function registerTools(server: McpServer) {
         return error('Drawing not found')
       }
 
+      await db.delete(shares).where(eq(shares.drawingId, drawingId))
       await ctx.env.STORAGE.delete(drawing.r2Key)
       await db.delete(drawings).where(eq(drawings.id, drawingId))
 
@@ -425,9 +449,12 @@ export function registerTools(server: McpServer) {
     'share_drawing',
     'Create or get an existing public share link for a drawing',
     {
-      drawingId: z.string().describe('Drawing ID to share'),
+      drawingId: z.string().optional().describe('Drawing ID to share'),
+      id: z.string().optional().describe('Alias for drawingId'),
     },
-    async ({ drawingId }) => {
+    async (args) => {
+      const drawingId = args.drawingId || args.id
+      if (!drawingId) return error('drawingId is required')
       const ctx = getContext('current')
       if (!ctx) return error('No auth context')
 
@@ -496,7 +523,7 @@ export function registerTools(server: McpServer) {
       const db = drizzle(ctx.env.DB)
       const drawingId = nanoid(12)
       const shareId = nanoid(10)
-      const drawingElements = elements || []
+      const drawingElements = normalizeElementsFont(elements || [])
       const drawingTitle = title?.trim() || 'Untitled'
 
       const drawingR2Key = `drawings/${ctx.userId}/${drawingId}.excalidraw`
@@ -507,7 +534,7 @@ export function registerTools(server: McpServer) {
         version: 2,
         source: 'flaredraw',
         elements: drawingElements,
-        appState: { viewBackgroundColor: '#ffffff', ...appState },
+        appState: { viewBackgroundColor: '#ffffff', currentItemFontFamily: 2, ...appState },
         files: {},
       })
 
@@ -786,14 +813,25 @@ export function registerTools(server: McpServer) {
     'chat_send_message',
     'Send a chat message or Bot reply to an EdgeChat channel or DM.',
     {
-      channelId: z.number().describe('Target channel ID (e.g. 1 for general)'),
+      channelId: z.union([z.number(), z.string()]).describe('Target channel ID (e.g. 1) or channel name (e.g. "general")'),
       content: z.string().describe('Message content (plain text or markdown)'),
-      replyToMessageId: z.number().optional().describe('Optional message ID being replied to'),
+      replyToMessageId: z.union([z.number(), z.string()]).optional().describe('Optional message ID being replied to'),
     },
     async ({ channelId, content, replyToMessageId }) => {
       const ctx = getContext('current')
       if (!ctx) return error('No auth context')
       const db = ctx.env.DB
+
+      let targetChannelId = 1
+      const parsedNum = Number(channelId)
+      if (!isNaN(parsedNum) && parsedNum > 0) {
+        targetChannelId = parsedNum
+      } else {
+        const found = await db.prepare(
+          'SELECT id FROM channels WHERE (name = ? OR id = ?) AND deleted_at IS NULL LIMIT 1'
+        ).bind(channelId, channelId).first() as any
+        targetChannelId = found ? found.id : 1
+      }
 
       // Find admin or bot sender user
       const adminUser = await db.prepare(
@@ -801,11 +839,20 @@ export function registerTools(server: McpServer) {
       ).first() as any
 
       const senderId = adminUser ? adminUser.id : 1
-      const [channel] = (await db.prepare(
+      let [channel] = (await db.prepare(
         `SELECT id, kind, name FROM channels WHERE id = ? AND deleted_at IS NULL LIMIT 1`
-      ).bind(channelId).all()).results as any[]
+      ).bind(targetChannelId).all()).results as any[]
 
-      if (!channel) return error(`Channel ID ${channelId} not found`)
+      if (!channel) {
+        channel = await db.prepare(
+          'SELECT id, kind, name FROM channels WHERE deleted_at IS NULL ORDER BY id ASC LIMIT 1'
+        ).first() as any
+        if (channel) {
+          targetChannelId = channel.id
+        }
+      }
+
+      if (!channel) return error('No active channels found in system')
 
       // Try sending via ChannelRoom DO for instant WebSocket broadcasting to all clients
       try {
@@ -846,9 +893,9 @@ export function registerTools(server: McpServer) {
         `INSERT INTO messages (channel_id, sender_id, content, reply_to_message_id, created_at)
          VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
          RETURNING id, channel_id, sender_id, content, created_at`
-      ).bind(channelId, senderId, content.trim(), replyToMessageId || null).first()
+      ).bind(Number(channel.id), senderId, content.trim(), replyToMessageId || null).first()
 
-      return text({ sent: true, channelId, message: res })
+      return text({ sent: true, channelId: channel.id, message: res })
     }
   )
 
@@ -857,14 +904,35 @@ export function registerTools(server: McpServer) {
     'chat_read_messages',
     'Read recent messages from an EdgeChat channel or DM.',
     {
-      channelId: z.number().describe('Target channel ID (e.g. 1 for general)'),
-      limit: z.number().optional().describe('Maximum number of messages to return (default 30, max 100)'),
+      channelId: z.union([z.number(), z.string()]).describe('Target channel ID (e.g. 1) or channel name (e.g. "general")'),
+      limit: z.union([z.number(), z.string()]).optional().describe('Maximum number of messages to return (default 30, max 100)'),
     },
     async ({ channelId, limit = 30 }) => {
       const ctx = getContext('current')
       if (!ctx) return error('No auth context')
       const db = ctx.env.DB
+
+      let targetChannelId = 1
+      const parsedNum = Number(channelId)
+      if (!isNaN(parsedNum) && parsedNum > 0) {
+        targetChannelId = parsedNum
+      } else {
+        const found = await db.prepare(
+          'SELECT id FROM channels WHERE (name = ? OR id = ?) AND deleted_at IS NULL LIMIT 1'
+        ).bind(channelId, channelId).first() as any
+        targetChannelId = found ? found.id : 1
+      }
       const take = Math.min(Math.max(Number(limit) || 30, 1), 100)
+
+      const chanExists = await db.prepare(
+        'SELECT id FROM channels WHERE id = ? AND deleted_at IS NULL LIMIT 1'
+      ).bind(targetChannelId).first() as any
+      if (!chanExists) {
+        const firstChan = await db.prepare(
+          'SELECT id FROM channels WHERE deleted_at IS NULL ORDER BY id ASC LIMIT 1'
+        ).first() as any
+        if (firstChan) targetChannelId = firstChan.id
+      }
 
       const { results } = await db.prepare(
         `SELECT m.id, m.channel_id, m.sender_id, m.content, m.attachment_key, m.attachment_name,
@@ -875,7 +943,7 @@ export function registerTools(server: McpServer) {
          WHERE m.channel_id = ? AND m.deleted_at IS NULL
          ORDER BY m.id DESC
          LIMIT ?`
-      ).bind(channelId, take).all()
+      ).bind(targetChannelId, take).all()
 
       return text({ channelId, messages: results.reverse() })
     }
@@ -928,12 +996,21 @@ export function registerTools(server: McpServer) {
     'storage_upload_file',
     'Upload a document, attachment, image, or file to cloud storage. Accepts text content or base64 encoded data.',
     {
-      filename: z.string().describe('File name including extension (e.g. report.pdf, doc.md, data.json)'),
-      content: z.string().describe('File content: plain text or Base64 encoded string'),
+      filename: z.string().optional().describe('File name including extension (e.g. report.pdf, doc.md, data.json)'),
+      fileName: z.string().optional().describe('Alias for filename'),
+      content: z.string().optional().describe('File content: plain text or Base64 encoded string'),
+      contentBase64: z.string().optional().describe('Alias for content (when isBase64 is true)'),
       isBase64: z.boolean().optional().describe('Whether the content is base64 encoded (default false)'),
       contentType: z.string().optional().describe('MIME type (optional, inferred from extension if omitted)'),
     },
-    async ({ filename, content, isBase64 = false, contentType }) => {
+    async (args) => {
+      const filename = args.filename || args.fileName
+      if (!filename) return error('filename is required')
+      const rawContent = args.content ?? args.contentBase64
+      if (rawContent === undefined || rawContent === null) return error('content is required')
+      const isBase64 = args.isBase64 || Boolean(args.contentBase64)
+      const contentType = args.contentType
+      const content = String(rawContent)
       const ctx = getContext('current')
       if (!ctx) return error('No auth context')
       const db = ctx.env.DB
@@ -1007,8 +1084,8 @@ export function registerTools(server: McpServer) {
       const row = await db.prepare(
         `SELECT object_key, owner_user_id, filename, content_type, size, created_at
          FROM uploaded_files
-         WHERE object_key = ? LIMIT 1`
-      ).bind(key).first() as any
+         WHERE object_key = ? OR filename = ? LIMIT 1`
+      ).bind(key, key).first() as any
 
       if (!row) return error('File not found')
 

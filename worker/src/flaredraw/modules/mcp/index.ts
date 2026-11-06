@@ -1,1 +1,1 @@
-export { mcpRoutes } from './routes'
+export { mcpRoutes } from './routes.ts'

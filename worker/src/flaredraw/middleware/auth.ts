@@ -1,14 +1,14 @@
 import type { Context, Next } from 'hono'
 import { eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/d1'
-import { createAuth } from '../modules/auth'
-import { apiTokens, mcpOAuthTokens, users } from '../db/schema'
+import { createAuth } from '../modules/auth/index.ts'
+import { apiTokens, mcpOAuthTokens, users } from '../db/schema.ts'
 import {
   getAuthCookie,
   verifySessionCookieValue,
   DEFAULT_USER,
   ensureDefaultUser,
-} from '../modules/auth/passcode'
+} from '../modules/auth/passcode.ts'
 
 export type AuthMethod = 'session' | 'api-token' | 'mcp-oauth'
 

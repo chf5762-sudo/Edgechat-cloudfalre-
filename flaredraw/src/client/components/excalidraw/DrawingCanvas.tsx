@@ -1,7 +1,7 @@
 import '@excalidraw/excalidraw/index.css'
 import { Excalidraw } from '@excalidraw/excalidraw'
 import type { ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
-import { useRef, useCallback, useState } from 'react'
+import { useRef, useCallback, useState, useMemo } from 'react'
 import { useAutoSave, type SaveStatus } from '@/client/hooks/useAutoSave'
 import { api, type DrawingContent } from '@/client/lib/api-client'
 import { useThemeContext } from '@/client/components/ThemeProvider'
@@ -95,17 +95,36 @@ export function DrawingCanvas({ drawingId, initialData, viewMode }: DrawingCanva
     excalidrawAPIRef.current = api
   }, [])
 
+  // Force default normal sans-serif font (2: Helvetica)
+  const processedData = useMemo(() => {
+    if (!initialData) {
+      return {
+        appState: { currentItemFontFamily: 2 },
+      }
+    }
+    const elements = (initialData.elements || []).map((el: any) => {
+      if (el && el.type === 'text' && (el.fontFamily === 1 || el.fontFamily === 5 || !el.fontFamily)) {
+        return { ...el, fontFamily: 2 }
+      }
+      return el
+    })
+    return {
+      elements,
+      appState: {
+        ...initialData.appState,
+        currentItemFontFamily: 2,
+      },
+      files: initialData.files,
+      scrollToContent: true,
+    }
+  }, [initialData])
+
   return (
     <div style={{ width: '100%', height: '100vh' }}>
       <Excalidraw
         excalidrawAPI={handleExcalidrawAPI}
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        initialData={initialData ? {
-          elements: initialData.elements,
-          appState: initialData.appState,
-          files: initialData.files,
-          scrollToContent: true,
-        } as any : undefined}
+        initialData={processedData as any}
         viewModeEnabled={viewMode}
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         onChange={viewMode ? undefined : handleChange as any}

@@ -99,12 +99,12 @@ For a label "Database" at fontSize 20:
 
 | ID | Name | Style | Use for |
 |----|------|-------|---------|
-| 1 | Virgil | Handwriting | Legacy — use 5 instead |
-| 2 | Helvetica | Sans-serif | Professional/formal diagrams |
+| 2 | Helvetica | Sans-serif / Normal | **Default** — Standard clean normal font |
 | 3 | Cascadia | Monospace | Code, technical labels |
-| 5 | Excalifont | Handwriting | **Default** — casual diagrams |
+| 1 | Virgil | Handwriting | Informal / Hand-drawn |
+| 5 | Excalifont | Handwriting | Informal / Hand-drawn |
 
-**Always use fontFamily: 5** unless specifically asked for a professional style (use 2) or code (use 3).
+**Always use fontFamily: 2 (Normal / Sans-serif)** for standard, professional, clean diagrams.
 
 ## Color Palettes
 
@@ -186,7 +186,7 @@ Text element:
   "width": 160, "height": 27,
   "text": "My Label",
   "fontSize": 20,
-  "fontFamily": 5,
+  "fontFamily": 2,
   "textAlign": "center"
 }
 \`\`\`
@@ -211,6 +211,18 @@ Text element:
 - Decision: rectangles with orange/yellow (NOT diamonds)
 - Vertical flow with arrows
 `
+
+
+function normalizeElementsFont(elements: any[]): any[] {
+  return (elements || []).map((el: any) => {
+    if (el && el.type === 'text') {
+      if (!el.fontFamily || el.fontFamily === 1 || el.fontFamily === 5) {
+        return { ...el, fontFamily: 2 }
+      }
+    }
+    return el
+  })
+}
 
 export function registerTools(server: McpServer) {
   // ─── read_guide ───
@@ -258,9 +270,12 @@ export function registerTools(server: McpServer) {
     'get_drawing',
     'Get full drawing content (Excalidraw JSON) by ID',
     {
-      drawingId: z.string().describe('Drawing ID'),
+      drawingId: z.string().optional().describe('Drawing ID'),
+      id: z.string().optional().describe('Alias for drawingId'),
     },
-    async ({ drawingId }) => {
+    async (args) => {
+      const drawingId = args.drawingId || args.id
+      if (!drawingId) return error('drawingId is required')
       const ctx = getContext('current')
       if (!ctx) return error('No auth context')
 
@@ -299,14 +314,14 @@ export function registerTools(server: McpServer) {
       const db = drizzle(ctx.env.DB)
       const id = nanoid(12)
       const r2Key = `drawings/${ctx.userId}/${id}.excalidraw`
-      const drawingElements = elements || []
+      const drawingElements = normalizeElementsFont(elements || [])
 
       const content = JSON.stringify({
         type: 'excalidraw',
         version: 2,
         source: 'flaredraw',
         elements: drawingElements,
-        appState: { viewBackgroundColor: '#ffffff', ...appState },
+        appState: { viewBackgroundColor: '#ffffff', currentItemFontFamily: 2, ...appState },
         files: {},
       })
 
@@ -325,6 +340,7 @@ export function registerTools(server: McpServer) {
       })
 
       return text({
+        id,
         drawingId: id,
         title: title?.trim() || 'Untitled',
         editUrl: `${ctx.origin}/draw/${id}`,
@@ -337,12 +353,16 @@ export function registerTools(server: McpServer) {
     'update_drawing',
     'Update a drawing\'s content and/or title',
     {
-      drawingId: z.string().describe('Drawing ID to update'),
+      drawingId: z.string().optional().describe('Drawing ID to update'),
+      id: z.string().optional().describe('Alias for drawingId'),
       title: z.string().optional().describe('New title'),
       elements: z.array(z.record(z.unknown())).optional().describe('New Excalidraw elements array'),
       appState: z.record(z.unknown()).optional().describe('New appState'),
     },
-    async ({ drawingId, title, elements, appState }) => {
+    async (args) => {
+      const drawingId = args.drawingId || args.id
+      if (!drawingId) return error('drawingId is required')
+      const { title, elements, appState } = args
       const ctx = getContext('current')
       if (!ctx) return error('No auth context')
 
@@ -396,9 +416,12 @@ export function registerTools(server: McpServer) {
     'delete_drawing',
     'Delete a drawing permanently',
     {
-      drawingId: z.string().describe('Drawing ID to delete'),
+      drawingId: z.string().optional().describe('Drawing ID to delete'),
+      id: z.string().optional().describe('Alias for drawingId'),
     },
-    async ({ drawingId }) => {
+    async (args) => {
+      const drawingId = args.drawingId || args.id
+      if (!drawingId) return error('drawingId is required')
       const ctx = getContext('current')
       if (!ctx) return error('No auth context')
 
@@ -413,6 +436,7 @@ export function registerTools(server: McpServer) {
         return error('Drawing not found')
       }
 
+      await db.delete(shares).where(eq(shares.drawingId, drawingId))
       await ctx.env.STORAGE.delete(drawing.r2Key)
       await db.delete(drawings).where(eq(drawings.id, drawingId))
 
@@ -425,9 +449,12 @@ export function registerTools(server: McpServer) {
     'share_drawing',
     'Create or get an existing public share link for a drawing',
     {
-      drawingId: z.string().describe('Drawing ID to share'),
+      drawingId: z.string().optional().describe('Drawing ID to share'),
+      id: z.string().optional().describe('Alias for drawingId'),
     },
-    async ({ drawingId }) => {
+    async (args) => {
+      const drawingId = args.drawingId || args.id
+      if (!drawingId) return error('drawingId is required')
       const ctx = getContext('current')
       if (!ctx) return error('No auth context')
 
@@ -496,7 +523,7 @@ export function registerTools(server: McpServer) {
       const db = drizzle(ctx.env.DB)
       const drawingId = nanoid(12)
       const shareId = nanoid(10)
-      const drawingElements = elements || []
+      const drawingElements = normalizeElementsFont(elements || [])
       const drawingTitle = title?.trim() || 'Untitled'
 
       const drawingR2Key = `drawings/${ctx.userId}/${drawingId}.excalidraw`
@@ -507,7 +534,7 @@ export function registerTools(server: McpServer) {
         version: 2,
         source: 'flaredraw',
         elements: drawingElements,
-        appState: { viewBackgroundColor: '#ffffff', ...appState },
+        appState: { viewBackgroundColor: '#ffffff', currentItemFontFamily: 2, ...appState },
         files: {},
       })
 

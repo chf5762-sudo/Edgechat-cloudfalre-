@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { nanoid } from 'nanoid'
 import { drizzle } from 'drizzle-orm/d1'
-import { drawings, shares } from '../../db/schema'
+import { drawings, shares } from '../../db/schema.ts'
 
 type Bindings = {
   DB: D1Database

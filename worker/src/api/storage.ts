@@ -150,6 +150,145 @@ export async function ensureProjectFolder(db: any, rootFolderId: number, project
   return res.meta.last_row_id;
 }
 
+export async function getDecryptedTextContent(env: any, objectKey: string, contentType = '', filename = ''): Promise<string> {
+  const filesBucket = env.FILES || env.STORAGE;
+  if (!filesBucket) return '';
+  try {
+    const obj = await filesBucket.get(objectKey);
+    if (!obj) return '';
+    const buf = await obj.arrayBuffer();
+    try {
+      const dec = await decryptAttachment(env, buf, objectKey);
+      return new TextDecoder('utf-8').decode(dec.bytes);
+    } catch {
+      return new TextDecoder('utf-8').decode(new Uint8Array(buf));
+    }
+  } catch {
+    return '';
+  }
+}
+
+export function buildLatestFileInfo(row: any, content?: string, origin = '') {
+  if (!row) return null;
+  const url = origin
+    ? `${origin}/files/${encodeURIComponent(row.object_key)}`
+    : `/files/${encodeURIComponent(row.object_key)}`;
+  return {
+    key: row.object_key,
+    name: row.filename,
+    filename: row.filename,
+    size: Number(row.size || 0),
+    type: row.content_type,
+    folderId: row.folder_id,
+    folderName: row.folder_name,
+    project: row.folder_name && row.folder_name !== AGENT_SHARED_FOLDER_NAME ? row.folder_name : null,
+    url,
+    createdAt: row.created_at,
+    created_at: row.created_at,
+    ...(content !== undefined ? { content } : {}),
+  };
+}
+
+export async function getProjectsLatestSummary(env: any, rootFolderId: number, origin = ''): Promise<{
+  overallLatest: any;
+  projects: Array<{
+    project: string;
+    folderId: number;
+    hasFiles: boolean;
+    latestFile: any;
+    isOverallLatest: boolean;
+    badge: string;
+  }>;
+}> {
+  const db = env.DB;
+
+  // 1. Get direct child project folders of the shared root folder
+  const { results: childFolders } = await db.prepare(
+    `SELECT id, name FROM storage_folders WHERE parent_id = ? AND trashed_at IS NULL AND deleted_at IS NULL ORDER BY name ASC`
+  ).bind(rootFolderId).all();
+
+  // 2. Find overall latest file across root and all descendant folders
+  let allFolderIds = await getDescendantFolderIds(db, rootFolderId);
+  if (!allFolderIds.includes(rootFolderId)) {
+    allFolderIds.push(rootFolderId);
+  }
+  const rootPlaceholders = allFolderIds.map(() => '?').join(',');
+  const overallRow = await db.prepare(`
+    SELECT uf.object_key, uf.filename, uf.content_type, uf.size, uf.created_at, uf.folder_id, f.name as folder_name
+    FROM uploaded_files uf
+    LEFT JOIN storage_folders f ON f.id = uf.folder_id
+    WHERE uf.folder_id IN (${rootPlaceholders})
+      AND uf.trashed_at IS NULL
+      AND NOT EXISTS (SELECT 1 FROM pending_r2_delete WHERE pending_r2_delete.object_key = uf.object_key)
+    ORDER BY uf.created_at DESC
+    LIMIT 1
+  `).bind(...allFolderIds).first() as any;
+
+  let overallContent = '';
+  if (overallRow) {
+    overallContent = await getDecryptedTextContent(env, overallRow.object_key, overallRow.content_type, overallRow.filename);
+  }
+  const overallLatest = overallRow ? buildLatestFileInfo(overallRow, overallContent, origin) : null;
+
+  // 3. For each project child folder, query its latest file
+  const projects: Array<{
+    project: string;
+    folderId: number;
+    hasFiles: boolean;
+    latestFile: any;
+    isOverallLatest: boolean;
+    badge: string;
+  }> = [];
+
+  for (const pf of (childFolders || [])) {
+    let pfFolderIds = await getDescendantFolderIds(db, pf.id);
+    if (!pfFolderIds.includes(pf.id)) {
+      pfFolderIds.push(pf.id);
+    }
+    const pfPlaceholders = pfFolderIds.map(() => '?').join(',');
+    const pfRow = await db.prepare(`
+      SELECT uf.object_key, uf.filename, uf.content_type, uf.size, uf.created_at, uf.folder_id, f.name as folder_name
+      FROM uploaded_files uf
+      LEFT JOIN storage_folders f ON f.id = uf.folder_id
+      WHERE uf.folder_id IN (${pfPlaceholders})
+        AND uf.trashed_at IS NULL
+        AND NOT EXISTS (SELECT 1 FROM pending_r2_delete WHERE pending_r2_delete.object_key = uf.object_key)
+      ORDER BY uf.created_at DESC
+      LIMIT 1
+    `).bind(...pfFolderIds).first() as any;
+
+    if (pfRow) {
+      const isOverallLatest = Boolean(overallRow && pfRow.object_key === overallRow.object_key);
+      let pfContent = '';
+      if (isOverallLatest && overallContent) {
+        pfContent = overallContent;
+      } else {
+        pfContent = await getDecryptedTextContent(env, pfRow.object_key, pfRow.content_type, pfRow.filename);
+      }
+      const latestFile = buildLatestFileInfo(pfRow, pfContent, origin);
+      projects.push({
+        project: pf.name,
+        folderId: pf.id,
+        hasFiles: true,
+        latestFile,
+        isOverallLatest,
+        badge: isOverallLatest ? '👑 全局最新' : '项目最新',
+      });
+    } else {
+      projects.push({
+        project: pf.name,
+        folderId: pf.id,
+        hasFiles: false,
+        latestFile: null,
+        isOverallLatest: false,
+        badge: '暂无报告',
+      });
+    }
+  }
+
+  return { overallLatest, projects };
+}
+
 async function requireOwner(c: any, type: 'file' | 'folder', id: string) {
   const session = c.get('session');
   if (type === 'file') {
@@ -764,94 +903,113 @@ export function registerStorageRoutes(app: any) {
       return errorResponse('分享链接不存在或已过期', 404);
     }
 
-    let targetRow: any = null;
+    const project = (c.req.query('project') || c.req.query('subfolder') || '').trim();
+    const isRaw = c.req.query('raw') === '1' || c.req.query('raw') === 'true';
 
+    // File share
     if (share.object_key) {
-      targetRow = await c.env.DB.prepare(
+      const targetRow = await c.env.DB.prepare(
         `SELECT uf.object_key, uf.filename, uf.content_type, uf.size, uf.created_at, uf.folder_id, f.name as folder_name
          FROM uploaded_files uf
          LEFT JOIN storage_folders f ON f.id = uf.folder_id
          WHERE uf.object_key = ? LIMIT 1`
-      ).bind(share.object_key).first();
-    } else if (share.folder_id) {
-      const project = (c.req.query('project') || c.req.query('subfolder') || '').trim();
-      let targetFolderIds: number[] = [];
+      ).bind(share.object_key).first() as any;
 
+      if (!targetRow) return c.json({ success: true, file: null, message: '文件不存在' });
+      const textContent = await getDecryptedTextContent(c.env, targetRow.object_key, targetRow.content_type, targetRow.filename);
+
+      if (isRaw) {
+        return new Response(textContent, {
+          headers: {
+            'Content-Type': targetRow.content_type || 'text/plain; charset=utf-8',
+            'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(targetRow.filename)}`,
+            'Cache-Control': 'no-cache',
+          }
+        });
+      }
+
+      return c.json({
+        success: true,
+        file: buildLatestFileInfo(targetRow, textContent),
+      });
+    }
+
+    // Folder share
+    if (share.folder_id) {
       if (project) {
         const projFolder = await c.env.DB.prepare(
           `SELECT id FROM storage_folders WHERE parent_id = ? AND name = ? AND trashed_at IS NULL AND deleted_at IS NULL LIMIT 1`
         ).bind(share.folder_id, project).first() as any;
-        if (projFolder?.id) {
-          targetFolderIds = await getDescendantFolderIds(c.env.DB, projFolder.id);
-        } else {
+
+        if (!projFolder?.id) {
           return c.json({ success: true, file: null, message: `项目 ${project} 尚无文件` });
         }
-      } else {
-        targetFolderIds = await getDescendantFolderIds(c.env.DB, share.folder_id);
+
+        let targetFolderIds = await getDescendantFolderIds(c.env.DB, projFolder.id);
+        if (!targetFolderIds.includes(projFolder.id)) targetFolderIds.push(projFolder.id);
+        const placeholders = targetFolderIds.map(() => '?').join(',');
+        const sql = `
+          SELECT uf.object_key, uf.filename, uf.content_type, uf.size, uf.created_at, uf.folder_id, f.name as folder_name
+          FROM uploaded_files uf
+          LEFT JOIN storage_folders f ON f.id = uf.folder_id
+          WHERE uf.folder_id IN (${placeholders})
+            AND uf.trashed_at IS NULL
+            AND NOT EXISTS (SELECT 1 FROM pending_r2_delete WHERE pending_r2_delete.object_key = uf.object_key)
+          ORDER BY uf.created_at DESC
+          LIMIT 1
+        `;
+        const targetRow = await c.env.DB.prepare(sql).bind(...targetFolderIds).first() as any;
+        if (!targetRow) {
+          return c.json({ success: true, file: null, message: `项目 ${project} 尚无文件` });
+        }
+
+        const textContent = await getDecryptedTextContent(c.env, targetRow.object_key, targetRow.content_type, targetRow.filename);
+
+        if (isRaw) {
+          return new Response(textContent, {
+            headers: {
+              'Content-Type': targetRow.content_type || 'text/plain; charset=utf-8',
+              'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(targetRow.filename)}`,
+              'Cache-Control': 'no-cache',
+            }
+          });
+        }
+
+        return c.json({
+          success: true,
+          file: buildLatestFileInfo(targetRow, textContent),
+        });
       }
 
-      if (targetFolderIds.length === 0) targetFolderIds = [share.folder_id];
-      const placeholders = targetFolderIds.map(() => '?').join(',');
-      const sql = `
-        SELECT uf.object_key, uf.filename, uf.content_type, uf.size, uf.created_at, uf.folder_id, f.name as folder_name
-        FROM uploaded_files uf
-        LEFT JOIN storage_folders f ON f.id = uf.folder_id
-        WHERE uf.folder_id IN (${placeholders})
-          AND uf.trashed_at IS NULL
-          AND NOT EXISTS (SELECT 1 FROM pending_r2_delete WHERE pending_r2_delete.object_key = uf.object_key)
-        ORDER BY uf.created_at DESC
-        LIMIT 1
-      `;
-      targetRow = await c.env.DB.prepare(sql).bind(...targetFolderIds).first();
-    }
+      // No project specified -> Multi-project aggregation
+      const summary = await getProjectsLatestSummary(c.env, share.folder_id);
 
-    if (!targetRow) {
-      return c.json({ success: true, file: null, message: '文件夹为空，暂无文件' });
-    }
-
-    // Decrypt content from R2
-    let textContent = '';
-    if (c.env.FILES) {
-      const obj = await c.env.FILES.get(targetRow.object_key);
-      if (obj) {
-        const buf = await obj.arrayBuffer();
-        try {
-          const dec = await decryptAttachment(c.env, buf, targetRow.object_key);
-          textContent = new TextDecoder('utf-8').decode(dec.bytes);
-        } catch {
-          textContent = new TextDecoder('utf-8').decode(new Uint8Array(buf));
+      if (isRaw) {
+        if (!summary.overallLatest) {
+          return new Response('文件夹为空，暂无文件', {
+            status: 404,
+            headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+          });
         }
+        return new Response(summary.overallLatest.content || '', {
+          headers: {
+            'Content-Type': summary.overallLatest.type || 'text/plain; charset=utf-8',
+            'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(summary.overallLatest.filename)}`,
+            'Cache-Control': 'no-cache',
+          }
+        });
       }
-    }
 
-    const isRaw = c.req.query('raw') === '1' || c.req.query('raw') === 'true';
-    if (isRaw) {
-      return new Response(textContent, {
-        headers: {
-          'Content-Type': targetRow.content_type || 'text/plain; charset=utf-8',
-          'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(targetRow.filename)}`,
-          'Cache-Control': 'no-cache',
-        }
+      return c.json({
+        success: true,
+        overallLatest: summary.overallLatest,
+        file: summary.overallLatest, // for backwards compatibility with raw readers
+        projects: summary.projects,
+        ...(summary.overallLatest ? {} : { message: '文件夹为空，暂无文件' }),
       });
     }
 
-    return c.json({
-      success: true,
-      file: {
-        key: targetRow.object_key,
-        filename: targetRow.filename,
-        name: targetRow.filename,
-        size: Number(targetRow.size || 0),
-        type: targetRow.content_type,
-        folderId: targetRow.folder_id,
-        folderName: targetRow.folder_name,
-        project: targetRow.folder_name && targetRow.folder_name !== AGENT_SHARED_FOLDER_NAME ? targetRow.folder_name : null,
-        url: `/files/${encodeURIComponent(targetRow.object_key)}`,
-        createdAt: targetRow.created_at,
-        created_at: targetRow.created_at,
-        content: textContent,
-      }
-    });
+    return errorResponse('无效的分享类型', 400);
   });
 
   // 3. POST /api/storage/shares/:token/files
@@ -1023,6 +1181,7 @@ export function registerStorageRoutes(app: any) {
 
       const project = (c.req.query('project') || c.req.query('subfolder') || '').trim();
       const files = await queryShareFiles(c.env, share, project);
+      const summary = await getProjectsLatestSummary(c.env, share.folder_id);
 
       if (wantsJson) {
         return c.json({
@@ -1031,7 +1190,93 @@ export function registerStorageRoutes(app: any) {
           project: project || null,
           files,
           count: files.length,
+          overallLatest: summary.overallLatest,
+          projects: summary.projects,
         });
+      }
+
+      let boardHtml = '';
+      if (summary.projects && summary.projects.length > 0) {
+        const cards = summary.projects.map((p: any) => {
+          const isOverall = p.isOverallLatest;
+          const hasFiles = p.hasFiles && p.latestFile;
+          const cardClass = isOverall ? 'project-card card-overall' : (hasFiles ? 'project-card' : 'project-card card-empty');
+
+          let badgeHtml = '';
+          if (isOverall) {
+            badgeHtml = `<span class="badge badge-overall">👑 全局最新</span>`;
+          } else if (hasFiles) {
+            badgeHtml = `<span class="badge badge-latest">📁 项目最新</span>`;
+          } else {
+            badgeHtml = `<span class="badge badge-empty">⚪ 暂无文件</span>`;
+          }
+
+          let fileDetail = '';
+          if (hasFiles) {
+            const f = p.latestFile;
+            const size = Number(f.size || 0);
+            const kb = size > 1024 * 1024 ? `${(size / 1024 / 1024).toFixed(1)} MB` : `${(size / 1024).toFixed(1)} KB`;
+            const timeStr = f.createdAt ? new Date(f.createdAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }) : '—';
+            fileDetail = `
+              <div class="card-file-box">
+                <a href="${f.url}" target="_blank" class="card-file-link" title="${f.filename}">📄 ${f.filename}</a>
+                <div class="card-file-info">
+                  <span>📦 ${kb}</span>
+                  <span>🕒 ${timeStr}</span>
+                </div>
+              </div>
+              <div class="card-footer">
+                <a href="?project=${encodeURIComponent(p.project)}" class="filter-action-link">🔍 筛选此项目文件 &rarr;</a>
+              </div>
+            `;
+          } else {
+            fileDetail = `
+              <div class="card-file-box empty-box">暂无产物报告</div>
+              <div class="card-footer">
+                <a href="?project=${encodeURIComponent(p.project)}" class="filter-action-link text-muted">查看该项目 &rarr;</a>
+              </div>
+            `;
+          }
+
+          return `
+            <div class="${cardClass}">
+              <div class="card-header">
+                <div class="project-title" title="${p.project}">
+                  <span class="project-icon">📁</span>
+                  <strong>${p.project}</strong>
+                </div>
+                ${badgeHtml}
+              </div>
+              ${fileDetail}
+            </div>
+          `;
+        }).join('');
+
+        boardHtml = `
+          <div class="board-section">
+            <div class="board-top">
+              <div class="board-heading">📊 各项目最新产物看板</div>
+              <div class="board-sub">共 ${summary.projects.length} 个协同项目 • 自动跟踪全局与各项目最新发布</div>
+            </div>
+            <div class="board-grid">
+              ${cards}
+            </div>
+          </div>
+        `;
+      }
+
+      let filterBreadcrumbHtml = '';
+      if (project) {
+        filterBreadcrumbHtml = `
+          <div class="filter-breadcrumb-bar">
+            <div class="filter-text">
+              <span>当前筛选项目:</span>
+              <strong class="filter-badge">📁 ${project}</strong>
+              <span class="filter-count">(${files.length} 个文件)</span>
+            </div>
+            <a href="?" class="reset-btn">✕ 查看全部项目</a>
+          </div>
+        `;
       }
 
       const rows = files.map((f: any) => {
@@ -1039,7 +1284,7 @@ export function registerStorageRoutes(app: any) {
         const size = Number(f.size || 0);
         const kb = size > 1024 * 1024 ? `${(size/1024/1024).toFixed(1)} MB` : `${(size/1024).toFixed(1)} KB`;
         const projectBadge = f.project
-          ? `<span style="background:#e0e7ff;color:#3730a3;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:600">${f.project}</span>`
+          ? `<a href="?project=${encodeURIComponent(f.project)}" style="text-decoration:none"><span style="background:#e0e7ff;color:#3730a3;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:600;display:inline-block">${f.project}</span></a>`
           : `<span style="color:#94a3b8;font-size:12px">根目录</span>`;
         return `<tr>
           <td style="padding:10px 12px"><a href="${fileShareUrl}" target="_blank" style="color:#2563eb;text-decoration:none;font-weight:500">${f.filename}</a></td>
@@ -1056,7 +1301,7 @@ export function registerStorageRoutes(app: any) {
         <title>共享文件夹: ${folderDisplayName}</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
-          body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:32px 20px;max-width:960px;margin:0 auto;color:#1e293b;background:#f8fafc}
+          body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:32px 20px;max-width:1040px;margin:0 auto;color:#1e293b;background:#f8fafc}
           .card{background:#ffffff;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,0.06);border:1px solid #e2e8f0;padding:24px;margin-bottom:24px}
           h1{font-size:1.4rem;margin:0 0 6px 0;display:flex;align-items:center;gap:8px}
           p.subtitle{color:#64748b;margin:0 0 20px 0;font-size:0.9rem}
@@ -1064,6 +1309,40 @@ export function registerStorageRoutes(app: any) {
           .banner-title{font-size:0.95rem;font-weight:700;color:#3730a3;display:flex;align-items:center;gap:6px}
           .banner-desc{color:#4338ca;font-size:0.85rem;margin-top:6px;line-height:1.6}
           .banner code{background:#ffffff;border:1px solid #c7d2fe;padding:2px 6px;border-radius:4px;font-size:0.8rem;color:#1e1b4b}
+
+          .board-section{margin-bottom:24px;background:#ffffff;border-radius:12px;border:1px solid #e2e8f0;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,0.03)}
+          .board-top{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid #f1f5f9}
+          .board-heading{font-size:1.05rem;font-weight:700;color:#1e293b;display:flex;align-items:center;gap:8px}
+          .board-sub{font-size:0.82rem;color:#64748b}
+          .board-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px}
+          .project-card{background:#ffffff;border:1px solid #e2e8f0;border-radius:10px;padding:16px;display:flex;flex-direction:column;justify-content:space-between;min-height:130px;transition:transform .15s ease,box-shadow .15s ease}
+          .project-card:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(0,0,0,0.06);border-color:#cbd5e1}
+          .card-overall{background:linear-gradient(135deg,#fffdf5 0%,#ffffff 100%);border:1.5px solid #f59e0b;box-shadow:0 2px 10px rgba(245,158,11,0.15)}
+          .card-overall:hover{box-shadow:0 6px 20px rgba(245,158,11,0.25);border-color:#d97706}
+          .card-empty{background:#f8fafc;border:1px dashed #cbd5e1}
+          .card-header{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:12px}
+          .project-title{display:flex;align-items:center;gap:6px;font-size:0.95rem;color:#0f172a;word-break:break-all}
+          .badge{padding:3px 8px;border-radius:9999px;font-size:11px;font-weight:700;white-space:nowrap;display:inline-flex;align-items:center}
+          .badge-overall{background:linear-gradient(135deg,#fef3c7,#fde68a);color:#92400e;border:1px solid #f59e0b;box-shadow:0 0 10px rgba(245,158,11,0.35);animation:pulse 2s infinite ease-in-out}
+          @keyframes pulse{0%,100%{box-shadow:0 0 6px rgba(245,158,11,0.3)}50%{box-shadow:0 0 12px rgba(245,158,11,0.6)}}
+          .badge-latest{background:#e0e7ff;color:#3730a3}
+          .badge-empty{background:#f1f5f9;color:#64748b}
+          .card-file-box{margin-bottom:12px}
+          .card-file-link{color:#2563eb;font-weight:600;font-size:0.88rem;text-decoration:none;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.4;margin-bottom:6px}
+          .card-file-link:hover{text-decoration:underline;color:#1d4ed8}
+          .card-file-info{display:flex;gap:12px;color:#64748b;font-size:0.78rem}
+          .empty-box{color:#94a3b8;font-size:0.85rem;padding:8px 0}
+          .card-footer{border-top:1px solid #f1f5f9;padding-top:10px;margin-top:auto}
+          .filter-action-link{font-size:0.8rem;color:#2563eb;text-decoration:none;font-weight:600;display:inline-flex;align-items:center;gap:4px}
+          .filter-action-link:hover{text-decoration:underline}
+          .text-muted{color:#94a3b8;font-weight:400}
+          .filter-breadcrumb-bar{display:flex;justify-content:space-between;align-items:center;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 16px;margin-bottom:16px}
+          .filter-text{display:flex;align-items:center;gap:8px;font-size:0.9rem;color:#1e3a8a}
+          .filter-badge{color:#1d4ed8;font-weight:700}
+          .filter-count{color:#64748b;font-size:0.85rem}
+          .reset-btn{background:#2563eb;color:#ffffff;font-size:0.8rem;font-weight:600;padding:4px 12px;border-radius:6px;text-decoration:none;transition:background .15s ease}
+          .reset-btn:hover{background:#1d4ed8}
+
           table{width:100%;border-collapse:collapse}
           th{text-align:left;padding:10px 12px;border-bottom:2px solid #e2e8f0;font-size:.82rem;text-transform:uppercase;color:#64748b;font-weight:600}
           tr:hover{background:#f1f5f9}
@@ -1082,6 +1361,8 @@ export function registerStorageRoutes(app: any) {
               • 支持通过 <code>GET /api/storage/shares/${token}/latest</code> 免密拉取最新报告
             </div>
           </div>
+          ${boardHtml}
+          ${filterBreadcrumbHtml}
           <table>
             <thead><tr><th>文件名</th><th>所属项目</th><th>类型</th><th>大小</th><th>上传时间 (最新居首)</th></tr></thead>
             <tbody>${rows || '<tr><td colspan="5" style="padding:28px;text-align:center;color:#94a3b8">文件夹为空</td></tr>'}</tbody>

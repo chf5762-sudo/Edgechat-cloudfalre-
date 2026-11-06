@@ -85,6 +85,36 @@ async function runTests() {
     return text;
   });
 
+  // 4b. Multi-Project Global Latest Aggregation
+  await test('4b. Multi-project aggregation & status badges from /api/storage/shares/agent-shared/latest', async () => {
+    const res = await fetch(`${BASE_URL}/api/storage/shares/agent-shared/latest`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+    const data = await res.json();
+    if (!data.success) throw new Error('data.success is not true');
+    if (!data.overallLatest) throw new Error('data.overallLatest is missing');
+    if (!data.file) throw new Error('data.file is missing for backwards compatibility');
+    if (!Array.isArray(data.projects) || data.projects.length === 0) {
+      throw new Error(`Expected non-empty projects array, got: ${JSON.stringify(data.projects)}`);
+    }
+
+    const edgeChatProj = data.projects.find(p => p.project === 'EdgeChat');
+    if (!edgeChatProj) throw new Error('Project "EdgeChat" not found in projects array');
+    if (!edgeChatProj.hasFiles || !edgeChatProj.latestFile) {
+      throw new Error('Project "EdgeChat" expected to have files');
+    }
+    if (!edgeChatProj.badge) {
+      throw new Error('Project "EdgeChat" missing status badge');
+    }
+
+    // Verify badge logic
+    const hasCrown = data.projects.some(p => p.isOverallLatest && p.badge === '👑 全局最新');
+    if (!hasCrown && data.overallLatest.project) {
+      throw new Error('Expected at least one project to have 👑 全局最新 badge when overall latest has project');
+    }
+
+    return data;
+  });
+
   // 5. Automatic Public Read via /files/:key without authentication
   await test('5. Automatic public access to /files/:key without credentials', async () => {
     if (!testUploadedKey) throw new Error('No uploaded key');
@@ -125,8 +155,8 @@ async function runTests() {
     return data;
   });
 
-  // 7. Public HTML Share View & /s/agent-shared redirect
-  await test('7. Public HTML view and /s/agent-shared redirect', async () => {
+  // 7. Public HTML Share View & /s/agent-shared redirect with Project Status Board
+  await test('7. Public HTML view and /s/agent-shared redirect with Project Status Board', async () => {
     // Test /s/agent-shared redirect
     const redirRes = await fetch(`${BASE_URL}/s/agent-shared`, { redirect: 'manual' });
     if (redirRes.status !== 302) throw new Error(`Expected 302 redirect for /s/agent-shared, got ${redirRes.status}`);
@@ -135,7 +165,7 @@ async function runTests() {
       throw new Error(`Expected redirect to share-view, got: ${loc}`);
     }
 
-    // Test HTML view content
+    // Test HTML view content & Status Board
     const htmlRes = await fetch(`${BASE_URL}/api/storage/share-view/agent-shared`);
     if (!htmlRes.ok) throw new Error(`HTTP ${htmlRes.status}: ${await htmlRes.text()}`);
     const html = await htmlRes.text();
@@ -143,6 +173,21 @@ async function runTests() {
     if (!html.includes('WorkBuddy & Antigravity 自动化协同流水线已激活')) {
       throw new Error('HTML view missing pipeline banner text');
     }
+    if (!html.includes('各项目最新产物看板')) {
+      throw new Error('HTML view missing Project Status Board title');
+    }
+    if (!html.includes('board-grid') || !html.includes('EdgeChat')) {
+      throw new Error('HTML view missing project status board grid');
+    }
+
+    // Test filtered view with breadcrumb
+    const filterRes = await fetch(`${BASE_URL}/api/storage/share-view/agent-shared?project=EdgeChat`);
+    if (!filterRes.ok) throw new Error(`HTTP ${filterRes.status}: ${await filterRes.text()}`);
+    const filterHtml = await filterRes.text();
+    if (!filterHtml.includes('当前筛选项目') || !filterHtml.includes('查看全部项目')) {
+      throw new Error('Filter view missing project breadcrumb or reset button');
+    }
+
     return true;
   });
 
@@ -234,7 +279,7 @@ async function runTests() {
       throw new Error(`MCP read content mismatch: ${JSON.stringify(readResult)}`);
     }
 
-    // 9c. MCP storage_get_latest_file
+    // 9c. MCP storage_get_latest_file (with project)
     const latestPayload = {
       jsonrpc: '2.0',
       id: 93,
@@ -261,6 +306,37 @@ async function runTests() {
     const latestResult = JSON.parse(latestData.result?.content?.[0]?.text || '{}');
     if (!latestResult.file?.content?.includes('MCP Collaborative Pipeline Report')) {
       throw new Error(`MCP get latest content mismatch: ${JSON.stringify(latestResult)}`);
+    }
+
+    // 9d. MCP storage_get_latest_file (without project: Multi-project aggregation)
+    const globalPayload = {
+      jsonrpc: '2.0',
+      id: 94,
+      method: 'tools/call',
+      params: {
+        name: 'storage_get_latest_file',
+        arguments: {
+          shareToken: 'agent-shared',
+        },
+      },
+    };
+    const globalRes = await fetch(`${BASE_URL}/api/mcp/message`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json, text/event-stream',
+        'Authorization': `Bearer ${PASSCODE}`,
+      },
+      body: JSON.stringify(globalPayload),
+    });
+    if (!globalRes.ok) throw new Error(`MCP Global Get Latest HTTP ${globalRes.status}`);
+    const globalData = await globalRes.json();
+    const globalResult = JSON.parse(globalData.result?.content?.[0]?.text || '{}');
+    if (!Array.isArray(globalResult.projects) || globalResult.projects.length === 0) {
+      throw new Error(`MCP global get latest missing projects array: ${JSON.stringify(globalResult)}`);
+    }
+    if (!globalResult.overallLatest) {
+      throw new Error(`MCP global get latest missing overallLatest: ${JSON.stringify(globalResult)}`);
     }
 
     return true;

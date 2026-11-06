@@ -19,6 +19,9 @@ const copiedDirect = ref(false);
 const copiedInstruction = ref(false);
 const copiedConfig = ref(false);
 const copiedCurl = ref(false);
+const copiedCollabCurl = ref(false);
+const copiedCollabLatest = ref(false);
+const copiedBoardUrl = ref(false);
 
 const workBuddyInstruction = computed(() => {
   return `你是我的全栈系统助理。你已连接 EdgeChat MCP 服务器，拥有以下全套工具接口：
@@ -43,6 +46,12 @@ const workBuddyInstruction = computed(() => {
 - storage_get_file_info: 获取文件详情与下载直链
 - storage_delete_file: 永久删除指定文件
 
+【5. 任务交接与协同测试看板 (WorkBuddy & Antigravity)】
+- storage_upload_file: 上传测试报告并交接 (支持 shareToken: "agent-shared", project: "<项目名>", autoTimestamp: true)
+- storage_get_latest_file: 获取各项目最新测试报告与全局最新裁决 (支持 shareToken: "agent-shared", project?: "<项目名>")
+- storage_read_file: 直接读取并解密任意云端测试报告/文档正文 (key: "<fileKey>")
+- 协同规则：测试执行完毕后，请自动将测试报告或排查文档存入 agent-共享免密目录/<项目名>，Antigravity 可自动依据最新报告进行代码排查与热修复！
+
 请根据我的指令选择合适的工具执行。在绘制架构图前，请先调用 read_guide 获取排版规则；发送消息时可自动选择 general (channelId: 1) 或目标会话。`;
 });
 
@@ -64,6 +73,18 @@ const curlExample = computed(() => {
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer 576257" \\
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'`;
+});
+
+const collabUploadCurl = computed(() => {
+  return `curl -X POST ${origin.value}/api/storage/shares/agent-shared/files -F "project=EdgeChat" -F "file=@test_report.md"`;
+});
+
+const collabLatestCurl = computed(() => {
+  return `curl ${origin.value}/api/storage/shares/agent-shared/latest`;
+});
+
+const collabBoardUrl = computed(() => {
+  return `${origin.value}/s/agent-shared`;
 });
 
 async function copyText(text, refState) {
@@ -218,6 +239,69 @@ async function copyText(text, refState) {
         </button>
       </div>
       <pre class="mcp-code-preview"><code>{{ curlExample }}</code></pre>
+    </div>
+
+    <!-- 共享任务看板交接测试 CLI / cURL 命令 -->
+    <div class="mcp-section-block">
+      <div class="block-header">
+        <label>共享任务看板交接测试 CLI / cURL 命令</label>
+        <span class="block-hint">WorkBuddy & Antigravity 自动化协同测试与交接指令</span>
+      </div>
+      <div class="collab-cmd-list">
+        <!-- 1. 免密上传测试报告 -->
+        <div class="collab-cmd-item">
+          <div class="cmd-label-row">
+            <span class="cmd-desc">1. 免密上传测试报告并交接给 Antigravity:</span>
+            <button
+              type="button"
+              class="copy-pill-btn"
+              @click="copyText(collabUploadCurl, copiedCollabCurl)"
+            >
+              <component :is="copiedCollabCurl ? Check : Copy" :size="13" />
+              <span>{{ copiedCollabCurl ? '已复制命令' : '复制上传命令' }}</span>
+            </button>
+          </div>
+          <pre class="mcp-code-preview"><code>{{ collabUploadCurl }}</code></pre>
+        </div>
+
+        <!-- 2. 机器拉取各项目最新进展 -->
+        <div class="collab-cmd-item">
+          <div class="cmd-label-row">
+            <span class="cmd-desc">2. 机器拉取各项目最新进展与全局裁决:</span>
+            <button
+              type="button"
+              class="copy-pill-btn"
+              @click="copyText(collabLatestCurl, copiedCollabLatest)"
+            >
+              <component :is="copiedCollabLatest ? Check : Copy" :size="13" />
+              <span>{{ copiedCollabLatest ? '已复制命令' : '复制拉取命令' }}</span>
+            </button>
+          </div>
+          <pre class="mcp-code-preview"><code>{{ collabLatestCurl }}</code></pre>
+        </div>
+
+        <!-- 3. 浏览器免密直达看板 -->
+        <div class="collab-cmd-item">
+          <div class="cmd-label-row">
+            <span class="cmd-desc">3. 浏览器免密直达看板:</span>
+            <div class="header-actions">
+              <button
+                type="button"
+                class="copy-pill-btn"
+                @click="copyText(collabBoardUrl, copiedBoardUrl)"
+              >
+                <component :is="copiedBoardUrl ? Check : Copy" :size="13" />
+                <span>{{ copiedBoardUrl ? '已复制链接' : '复制看板直链' }}</span>
+              </button>
+              <a :href="collabBoardUrl" target="_blank" rel="noopener noreferrer" class="link-open-btn">
+                <ExternalLink :size="13" />
+                <span>直接访问</span>
+              </a>
+            </div>
+          </div>
+          <pre class="mcp-code-preview mcp-code-preview--link"><code>{{ collabBoardUrl }}</code></pre>
+        </div>
+      </div>
     </div>
   </section>
 </template>
@@ -497,5 +581,58 @@ async function copyText(text, refState) {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   overflow-x: auto;
   white-space: pre-wrap;
+}
+
+.collab-cmd-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.collab-cmd-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--surface-secondary, #f8fafc);
+  border: 1px solid var(--border-subtle, #e2e8f0);
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.cmd-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cmd-desc {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-primary, #1e293b);
+}
+
+.mcp-code-preview--link {
+  color: #6ee7b7;
+}
+
+.link-open-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font-size: 0.76rem;
+  font-weight: 500;
+  border-radius: 6px;
+  background: #e0e7ff;
+  border: 1px solid #c7d2fe;
+  color: #3730a3;
+  text-decoration: none;
+  transition: all 0.15s ease;
+}
+
+.link-open-btn:hover {
+  background: #c7d2fe;
 }
 </style>

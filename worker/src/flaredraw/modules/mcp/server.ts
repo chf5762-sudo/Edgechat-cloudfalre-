@@ -10,6 +10,7 @@ import {
   ensureProjectFolder,
   getDescendantFolderIds,
   applyAutoTimestamp,
+  getProjectsLatestSummary,
   AGENT_SHARED_FOLDER_NAME,
   AGENT_SHARED_TOKEN,
 } from '../../../api/storage.ts'
@@ -1176,7 +1177,7 @@ export function registerTools(server: McpServer) {
   // ─── storage_get_latest_file ───
   server.tool(
     'storage_get_latest_file',
-    'Get the latest uploaded file metadata and its decrypted text content from cloud storage or a specific folder/project.',
+    'Get the latest uploaded file metadata and its decrypted text content from cloud storage or a specific folder/project. If no project is specified, aggregates latest files across all projects with status badges.',
     {
       folderId: z.number().optional().describe('Folder ID to get latest file from (optional)'),
       shareToken: z.string().optional().describe('Share token (e.g. "agent-shared") to query (optional)'),
@@ -1188,12 +1189,13 @@ export function registerTools(server: McpServer) {
       if (!ctx) return error('No auth context')
       const db = ctx.env.DB
 
-      let targetFolderIds: number[] = []
+      // When a specific project is requested, return that project's latest file
+      if (args.project) {
+        let targetFolderIds: number[] = []
 
-      if (args.shareToken) {
-        if (args.shareToken === AGENT_SHARED_TOKEN) {
-          const agentFolder = await ensureAgentSharedFolder(db)
-          if (args.project) {
+        if (args.shareToken) {
+          if (args.shareToken === AGENT_SHARED_TOKEN) {
+            const agentFolder = await ensureAgentSharedFolder(db)
             const projFolder = await db.prepare(
               `SELECT id FROM storage_folders WHERE parent_id = ? AND name = ? AND trashed_at IS NULL AND deleted_at IS NULL LIMIT 1`
             ).bind(agentFolder.id, args.project).first() as any
@@ -1203,111 +1205,133 @@ export function registerTools(server: McpServer) {
               return error(`Project "${args.project}" not found in shared folder`)
             }
           } else {
-            targetFolderIds = await getDescendantFolderIds(db, agentFolder.id)
-          }
-        } else {
-          const shareRow = await db.prepare(
-            `SELECT folder_id FROM storage_shares WHERE token = ? LIMIT 1`
-          ).bind(args.shareToken).first() as any
-          if (shareRow?.folder_id) {
-            if (args.project) {
+            const shareRow = await db.prepare(
+              `SELECT folder_id FROM storage_shares WHERE token = ? LIMIT 1`
+            ).bind(args.shareToken).first() as any
+            if (shareRow?.folder_id) {
               const projFolder = await db.prepare(
                 `SELECT id FROM storage_folders WHERE parent_id = ? AND name = ? AND trashed_at IS NULL AND deleted_at IS NULL LIMIT 1`
               ).bind(shareRow.folder_id, args.project).first() as any
               if (projFolder?.id) {
                 targetFolderIds = await getDescendantFolderIds(db, projFolder.id)
+              } else {
+                return error(`Project "${args.project}" not found in shared folder`)
               }
-            } else {
-              targetFolderIds = await getDescendantFolderIds(db, shareRow.folder_id)
             }
           }
-        }
-      } else if (args.folderName) {
-        const fld = await db.prepare(
-          `SELECT id FROM storage_folders WHERE name = ? AND trashed_at IS NULL AND deleted_at IS NULL LIMIT 1`
-        ).bind(args.folderName).first() as any
-        if (fld?.id) {
-          if (args.project) {
+        } else if (args.folderName) {
+          const fld = await db.prepare(
+            `SELECT id FROM storage_folders WHERE name = ? AND trashed_at IS NULL AND deleted_at IS NULL LIMIT 1`
+          ).bind(args.folderName).first() as any
+          if (fld?.id) {
             const projFolder = await db.prepare(
               `SELECT id FROM storage_folders WHERE parent_id = ? AND name = ? AND trashed_at IS NULL AND deleted_at IS NULL LIMIT 1`
             ).bind(fld.id, args.project).first() as any
             if (projFolder?.id) targetFolderIds = await getDescendantFolderIds(db, projFolder.id)
-          } else {
-            targetFolderIds = await getDescendantFolderIds(db, fld.id)
           }
-        }
-      } else if (args.folderId) {
-        if (args.project) {
+        } else if (args.folderId) {
           const projFolder = await db.prepare(
             `SELECT id FROM storage_folders WHERE parent_id = ? AND name = ? AND trashed_at IS NULL AND deleted_at IS NULL LIMIT 1`
           ).bind(args.folderId, args.project).first() as any
           if (projFolder?.id) targetFolderIds = await getDescendantFolderIds(db, projFolder.id)
         } else {
-          targetFolderIds = await getDescendantFolderIds(db, args.folderId)
-        }
-      } else if (args.project) {
-        const agentFolder = await ensureAgentSharedFolder(db)
-        const projFolder = await db.prepare(
-          `SELECT id FROM storage_folders WHERE parent_id = ? AND name = ? AND trashed_at IS NULL AND deleted_at IS NULL LIMIT 1`
-        ).bind(agentFolder.id, args.project).first() as any
-        if (projFolder?.id) {
-          targetFolderIds = await getDescendantFolderIds(db, projFolder.id)
-        } else {
-          return error(`Project "${args.project}" not found`)
-        }
-      }
-
-      let sql = `
-        SELECT uf.object_key, uf.owner_user_id, uf.filename, uf.content_type, uf.size, uf.created_at, uf.folder_id, f.name as folder_name
-        FROM uploaded_files uf
-        LEFT JOIN storage_folders f ON f.id = uf.folder_id
-        WHERE NOT EXISTS (SELECT 1 FROM pending_r2_delete WHERE pending_r2_delete.object_key = uf.object_key)
-          AND uf.trashed_at IS NULL
-      `
-      const params: any[] = []
-      if (targetFolderIds.length > 0) {
-        const placeholders = targetFolderIds.map(() => '?').join(',')
-        sql += ` AND uf.folder_id IN (${placeholders})`
-        params.push(...targetFolderIds)
-      }
-      sql += ` ORDER BY uf.created_at DESC LIMIT 1`
-
-      const row = await db.prepare(sql).bind(...params).first() as any
-      if (!row) return error('No files found')
-
-      // Decrypt text content from R2
-      let textContent = ''
-      const envWithStorage = ctx.env as any
-      const filesBucket = envWithStorage.FILES || envWithStorage.STORAGE
-      if (filesBucket) {
-        const obj = await filesBucket.get(row.object_key)
-        if (obj) {
-          const buf = await obj.arrayBuffer()
-          try {
-            const { decryptAttachment } = await import('../../../encryption.js' as any)
-            const dec = await decryptAttachment(ctx.env, buf, row.object_key)
-            textContent = new TextDecoder('utf-8').decode(dec.bytes)
-          } catch {
-            textContent = new TextDecoder('utf-8').decode(new Uint8Array(buf))
+          const agentFolder = await ensureAgentSharedFolder(db)
+          const projFolder = await db.prepare(
+            `SELECT id FROM storage_folders WHERE parent_id = ? AND name = ? AND trashed_at IS NULL AND deleted_at IS NULL LIMIT 1`
+          ).bind(agentFolder.id, args.project).first() as any
+          if (projFolder?.id) {
+            targetFolderIds = await getDescendantFolderIds(db, projFolder.id)
+          } else {
+            return error(`Project "${args.project}" not found`)
           }
         }
+
+        if (targetFolderIds.length === 0) return error(`No files found for project "${args.project}"`)
+        const placeholders = targetFolderIds.map(() => '?').join(',')
+        const sql = `
+          SELECT uf.object_key, uf.owner_user_id, uf.filename, uf.content_type, uf.size, uf.created_at, uf.folder_id, f.name as folder_name
+          FROM uploaded_files uf
+          LEFT JOIN storage_folders f ON f.id = uf.folder_id
+          WHERE NOT EXISTS (SELECT 1 FROM pending_r2_delete WHERE pending_r2_delete.object_key = uf.object_key)
+            AND uf.trashed_at IS NULL
+            AND uf.folder_id IN (${placeholders})
+          ORDER BY uf.created_at DESC LIMIT 1
+        `
+        const row = await db.prepare(sql).bind(...targetFolderIds).first() as any
+        if (!row) return error(`No files found for project "${args.project}"`)
+
+        // Decrypt text content from R2
+        let textContent = ''
+        const envWithStorage = ctx.env as any
+        const filesBucket = envWithStorage.FILES || envWithStorage.STORAGE
+        if (filesBucket) {
+          const obj = await filesBucket.get(row.object_key)
+          if (obj) {
+            const buf = await obj.arrayBuffer()
+            try {
+              const { decryptAttachment } = await import('../../../encryption.js' as any)
+              const dec = await decryptAttachment(ctx.env, buf, row.object_key)
+              textContent = new TextDecoder('utf-8').decode(dec.bytes)
+            } catch {
+              textContent = new TextDecoder('utf-8').decode(new Uint8Array(buf))
+            }
+          }
+        }
+
+        return text({
+          file: {
+            key: row.object_key,
+            name: row.filename,
+            filename: row.filename,
+            type: row.content_type,
+            size: Number(row.size || 0),
+            folderId: row.folder_id,
+            folderName: row.folder_name,
+            project: row.folder_name && row.folder_name !== AGENT_SHARED_FOLDER_NAME ? row.folder_name : null,
+            url: `${ctx.origin}/files/${encodeURIComponent(row.object_key)}`,
+            createdAt: row.created_at,
+            content: textContent,
+          },
+        })
       }
 
-      return text({
-        file: {
-          key: row.object_key,
-          name: row.filename,
-          filename: row.filename,
-          type: row.content_type,
-          size: Number(row.size || 0),
-          folderId: row.folder_id,
-          folderName: row.folder_name,
-          project: row.folder_name && row.folder_name !== AGENT_SHARED_FOLDER_NAME ? row.folder_name : null,
-          url: `${ctx.origin}/files/${encodeURIComponent(row.object_key)}`,
-          createdAt: row.created_at,
-          content: textContent,
-        },
-      })
+      // No project specified: Perform multi-project aggregation
+      let rootFolderId: number | null = null
+      if (args.shareToken) {
+        if (args.shareToken === AGENT_SHARED_TOKEN) {
+          const agentFolder = await ensureAgentSharedFolder(db)
+          rootFolderId = agentFolder.id
+        } else {
+          const shareRow = await db.prepare(
+            `SELECT folder_id FROM storage_shares WHERE token = ? LIMIT 1`
+          ).bind(args.shareToken).first() as any
+          if (shareRow?.folder_id) rootFolderId = shareRow.folder_id
+        }
+      } else if (args.folderId) {
+        rootFolderId = args.folderId
+      } else if (args.folderName) {
+        const fld = await db.prepare(
+          `SELECT id FROM storage_folders WHERE name = ? AND trashed_at IS NULL AND deleted_at IS NULL LIMIT 1`
+        ).bind(args.folderName).first() as any
+        if (fld?.id) rootFolderId = fld.id
+      } else {
+        const agentFolder = await ensureAgentSharedFolder(db)
+        rootFolderId = agentFolder.id
+      }
+
+      if (rootFolderId) {
+        const summary = await getProjectsLatestSummary(ctx.env, rootFolderId, ctx.origin)
+        if (!summary.overallLatest && (!summary.projects || summary.projects.length === 0)) {
+          return error('No files found')
+        }
+        return text({
+          file: summary.overallLatest,
+          overallLatest: summary.overallLatest,
+          projects: summary.projects,
+        })
+      }
+
+      return error('Folder not found')
     }
   )
 

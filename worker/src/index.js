@@ -96,8 +96,10 @@ registerInstanceBridgePublicRoutes(app);
 // Public share link: check storage_shares first, then fall back to FlareDraw drawing share
 app.get('/s/:shareId', async (c) => {
   const shareId = c.req.param('shareId');
+  const url = new URL(c.req.url);
+  const search = url.search || '';
   if (shareId === 'agent-shared') {
-    return c.redirect('/api/storage/share-view/agent-shared', 302);
+    return c.redirect(`/api/storage/share-view/agent-shared${search}`, 302);
   }
   // Check if this is a storage share token
   const storageShare = await c.env.DB.prepare(
@@ -105,10 +107,10 @@ app.get('/s/:shareId', async (c) => {
   ).bind(shareId).first().catch(() => null);
 
   if (storageShare) {
-    return c.redirect(`/api/storage/share-view/${shareId}`, 302);
+    return c.redirect(`/api/storage/share-view/${shareId}${search}`, 302);
   }
   // FlareDraw drawing share
-  return c.redirect(`/flaredraw/s/${shareId}`, 302);
+  return c.redirect(`/flaredraw/s/${shareId}${search}`, 302);
 });
 
 app.get('/api/register-links/:token', async (c) => {

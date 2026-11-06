@@ -19,6 +19,12 @@ async function assets(request: Request, env, settings, authenticated?: boolean) 
   const url = new URL(request.url);
   const path = url.pathname;
 
+  // Public share link redirect: /s/:shareId -> /flaredraw/s/:shareId
+  if (path.startsWith('/s/')) {
+    const shareId = path.slice(3);
+    return Response.redirect(`${url.origin}/flaredraw/s/${shareId}`, 302);
+  }
+
   // FlareDraw SPA sub-app routing
   if (path === '/flaredraw') {
     return Response.redirect(`${url.origin}/flaredraw/`, 301);

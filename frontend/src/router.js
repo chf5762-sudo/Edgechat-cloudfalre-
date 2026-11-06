@@ -21,6 +21,14 @@ const router = createRouter({
       meta: { public: true, transition: 'page' }
     },
     {
+      path: '/s/:shareId',
+      name: 'share-link',
+      meta: { public: true },
+      beforeEnter: (to) => {
+        window.location.replace(`/flaredraw/s/${to.params.shareId}`);
+      }
+    },
+    {
       path: '/',
       name: 'chat',
       component: () => import('./pages/ChatPage.vue'),

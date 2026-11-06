@@ -93,6 +93,12 @@ app.get('/api/site', async (c) => {
 registerTelegramPublicRoutes(app);
 registerInstanceBridgePublicRoutes(app);
 
+// Public share link redirect: /s/:shareId -> /flaredraw/s/:shareId
+app.get('/s/:shareId', (c) => {
+  const shareId = c.req.param('shareId');
+  return c.redirect(`/flaredraw/s/${shareId}`, 302);
+});
+
 app.get('/api/register-links/:token', async (c) => {
   const token = String(c.req.param('token') || '').trim();
   if (!token) {

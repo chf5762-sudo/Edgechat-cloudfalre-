@@ -11,6 +11,7 @@ import {
   getDescendantFolderIds,
   applyAutoTimestamp,
   getProjectsLatestSummary,
+  getDecryptedTextContent,
   AGENT_SHARED_FOLDER_NAME,
   AGENT_SHARED_TOKEN,
 } from '../../../api/storage.ts'
@@ -1382,6 +1383,168 @@ export function registerTools(server: McpServer) {
           createdAt: row.created_at,
           content: textContent,
         },
+      })
+    }
+  )
+
+  // ─── handoff_save ───
+  server.tool(
+    'handoff_save',
+    '【任务交接专线】当用户说‘保存’、‘交接’、‘保存测试报告’或交接测试产物时必须调用此工具。自动保存到 agent-共享免密目录 下并加盖时间戳，严禁使用普通 storage 工具。',
+    {
+      filename: z.string().optional().describe('文件名（例如 test_report.md）'),
+      content: z.string().describe('交接内容或测试报告纯文本'),
+      project: z.string().optional().describe('项目名称，例如 EdgeChat'),
+      autoTimestamp: z.boolean().optional().describe('是否自动加盖时间戳（默认 true）'),
+    },
+    async (args) => {
+      const ctx = getContext('current')
+      if (!ctx) return error('No auth context')
+      const db = ctx.env.DB
+
+      if (!args.content && args.content !== '') return error('content is required')
+      let filename = args.filename?.trim() || 'test_report.md'
+      const projectName = (args.project || 'EdgeChat').trim()
+
+      if (args.autoTimestamp !== false) {
+        filename = applyAutoTimestamp(filename)
+      }
+
+      // Automatically sets target to agent-共享免密目录/<project>
+      const agentFolder = await ensureAgentSharedFolder(db)
+      const targetFolderId = await ensureProjectFolder(db, agentFolder.id, projectName, agentFolder.ownerUserId)
+      const targetOwnerId = agentFolder.ownerUserId
+
+      const bytes = new TextEncoder().encode(args.content)
+      const mime = getMimeTypeFromFilename(filename)
+      const ext = filename.includes('.') ? filename.slice(filename.lastIndexOf('.')) : ''
+      const key = `${targetOwnerId}/${Date.now()}-${nanoid(10)}${ext}`
+
+      const envWithStorage = ctx.env as any
+      const filesBucket = envWithStorage.FILES || envWithStorage.STORAGE
+      if (!filesBucket) return error('Storage bucket not configured')
+
+      try {
+        const { encryptAttachment } = await import('../../../encryption.js' as any)
+        const encrypted = await encryptAttachment(ctx.env, bytes.buffer, key)
+        await filesBucket.put(key, encrypted, {
+          httpMetadata: { contentType: mime, cacheControl: 'private, no-store' },
+          customMetadata: { filename, edgechatEncryption: 'v1' },
+        })
+      } catch {
+        await filesBucket.put(key, bytes.buffer, {
+          httpMetadata: { contentType: mime, cacheControl: 'private, no-store' },
+          customMetadata: { filename },
+        })
+      }
+
+      const n = new Date().toISOString()
+      await db.prepare(
+        `INSERT INTO uploaded_files (object_key, owner_user_id, filename, content_type, size, folder_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(object_key) DO UPDATE SET filename = excluded.filename, size = excluded.size, folder_id = excluded.folder_id, updated_at = excluded.updated_at`
+      ).bind(key, targetOwnerId, filename, mime, bytes.byteLength, targetFolderId, n, n).run()
+
+      const fileUrl = `${ctx.origin}/files/${encodeURIComponent(key)}`
+      return text({
+        success: true,
+        file: {
+          key,
+          filename,
+          name: filename,
+          type: mime,
+          size: bytes.byteLength,
+          project: projectName,
+          folderId: targetFolderId,
+          url: fileUrl,
+          createdAt: n,
+          created_at: n,
+        },
+      })
+    }
+  )
+
+  // ─── handoff_get_new ───
+  server.tool(
+    'handoff_get_new',
+    '【任务交接专线】当用户说‘获取最新交接’、‘最新交接文件’、‘按最新报告修复’时必须调用此工具。获取全域或指定项目最新交接报告及解密正文。',
+    {
+      project: z.string().optional().describe('项目名称，留空则获取全局最新并聚合各项目最新'),
+      raw: z.boolean().optional().describe('是否仅返回原始纯文本内容（默认 false）'),
+    },
+    async (args) => {
+      const ctx = getContext('current')
+      if (!ctx) return error('No auth context')
+      const db = ctx.env.DB
+
+      const agentFolder = await ensureAgentSharedFolder(db)
+
+      if (args.project) {
+        const projectName = args.project.trim()
+        const projFolder = await db.prepare(
+          `SELECT id FROM storage_folders WHERE parent_id = ? AND name = ? AND trashed_at IS NULL AND deleted_at IS NULL LIMIT 1`
+        ).bind(agentFolder.id, projectName).first() as any
+
+        if (!projFolder?.id) {
+          return error(`Project "${projectName}" not found in handoff shared folder`)
+        }
+
+        let targetFolderIds = await getDescendantFolderIds(db, projFolder.id)
+        if (!targetFolderIds.includes(projFolder.id)) targetFolderIds.push(projFolder.id)
+        const placeholders = targetFolderIds.map(() => '?').join(',')
+        const sql = `
+          SELECT uf.object_key, uf.owner_user_id, uf.filename, uf.content_type, uf.size, uf.created_at, uf.folder_id, f.name as folder_name
+          FROM uploaded_files uf
+          LEFT JOIN storage_folders f ON f.id = uf.folder_id
+          WHERE NOT EXISTS (SELECT 1 FROM pending_r2_delete WHERE pending_r2_delete.object_key = uf.object_key)
+            AND uf.trashed_at IS NULL
+            AND uf.folder_id IN (${placeholders})
+          ORDER BY uf.created_at DESC LIMIT 1
+        `
+        const row = await db.prepare(sql).bind(...targetFolderIds).first() as any
+        if (!row) return error(`No handoff files found for project "${projectName}"`)
+
+        const textContent = await getDecryptedTextContent(ctx.env, row.object_key, row.content_type, row.filename)
+        if (args.raw) {
+          return text(textContent)
+        }
+
+        const fileInfo = {
+          key: row.object_key,
+          name: row.filename,
+          filename: row.filename,
+          type: row.content_type,
+          size: Number(row.size || 0),
+          folderId: row.folder_id,
+          folderName: row.folder_name,
+          project: row.folder_name && row.folder_name !== AGENT_SHARED_FOLDER_NAME ? row.folder_name : projectName,
+          url: `${ctx.origin}/files/${encodeURIComponent(row.object_key)}`,
+          createdAt: row.created_at,
+          created_at: row.created_at,
+          content: textContent,
+        }
+
+        return text({
+          success: true,
+          file: fileInfo,
+          overallLatest: fileInfo,
+        })
+      }
+
+      // No project specified -> Multi-project aggregation
+      const summary = await getProjectsLatestSummary(ctx.env, agentFolder.id, ctx.origin)
+      if (args.raw) {
+        if (!summary.overallLatest?.content) {
+          return error('No handoff files found')
+        }
+        return text(summary.overallLatest.content)
+      }
+
+      return text({
+        success: true,
+        file: summary.overallLatest,
+        overallLatest: summary.overallLatest,
+        projects: summary.projects,
       })
     }
   )

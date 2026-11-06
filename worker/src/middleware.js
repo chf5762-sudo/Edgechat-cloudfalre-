@@ -7,7 +7,7 @@ import { ApiError } from './errors.js';
 
 export async function authMiddleware(c, next) {
   const path = new URL(c.req.url).pathname;
-  if (path.startsWith('/api/storage/share-view/') || path.startsWith('/api/storage/shares/')) {
+  if (path.startsWith('/api/storage/share-view/') || path.startsWith('/api/storage/shares/') || path === '/api/handoff' || path.startsWith('/api/handoff/')) {
     return next();
   }
   if (path.startsWith('/api/admin/')) c.header('Cache-Control', 'private, no-store');

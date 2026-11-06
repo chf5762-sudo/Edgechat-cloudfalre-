@@ -34,7 +34,7 @@ async function callMcpTool(name, args = {}, id = 1) {
 }
 
 async function runAllTests() {
-  console.log('=== Starting End-to-End MCP 24 Tools Health Test ===\n');
+  console.log('=== Starting End-to-End MCP 26 Tools Health Test ===\n');
   const results = [];
   let createdDrawingId = null;
   let createdShareId = null;
@@ -315,6 +315,35 @@ async function runAllTests() {
     return r.data?.result;
   });
 
+  // 25. handoff_save
+  let handoffUploadedKey = null;
+  await test('25. handoff_save', async () => {
+    const r = await callMcpTool('handoff_save', {
+      filename: 'mcp_test_handoff_report.md',
+      content: '# MCP 26 Handoff Save Test\nTimestamp: ' + new Date().toISOString(),
+      project: 'McpHandoffSuite',
+      autoTimestamp: true,
+    });
+    const parsed = JSON.parse(r.data?.result?.content?.[0]?.text || '{}');
+    if (!parsed.success || !parsed.file?.key) {
+      throw new Error(`handoff_save response invalid: ${JSON.stringify(parsed)}`);
+    }
+    handoffUploadedKey = parsed.file.key;
+    return r.data?.result;
+  });
+
+  // 26. handoff_get_new
+  await test('26. handoff_get_new', async () => {
+    const r = await callMcpTool('handoff_get_new', {
+      project: 'McpHandoffSuite',
+    });
+    const parsed = JSON.parse(r.data?.result?.content?.[0]?.text || '{}');
+    if (!parsed.success || !parsed.file?.content?.includes('MCP 26 Handoff Save Test')) {
+      throw new Error(`handoff_get_new content mismatch: ${JSON.stringify(parsed)}`);
+    }
+    return r.data?.result;
+  });
+
   console.log('\n=== Test Results Summary ===');
   const passedCount = results.filter(r => r.passed).length;
   console.log(`Passed: ${passedCount} / ${results.length}`);
@@ -322,7 +351,7 @@ async function runAllTests() {
     console.log('Failed tests:', results.filter(r => !r.passed).map(r => r.name));
     process.exit(1);
   } else {
-    console.log('🎉 ALL 24 MCP TOOLS PASSED SUCCESSFULLY (100%)!');
+    console.log('🎉 ALL 26 MCP TOOLS PASSED SUCCESSFULLY (100%)!');
   }
 }
 

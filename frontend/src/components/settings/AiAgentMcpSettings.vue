@@ -24,35 +24,23 @@ const copiedCollabLatest = ref(false);
 const copiedBoardUrl = ref(false);
 
 const workBuddyInstruction = computed(() => {
-  return `你是我的全栈系统助理。你已连接 EdgeChat MCP 服务器，拥有以下全套工具接口：
+  return `你是我的全栈系统助理。你已连接 EdgeChat MCP 服务器，拥有以下四大核心语义车道工具接口：
 
-【1. 聊天与 BOT 交互】
-- chat_list_channels: 获取所有公开群组与私信会话
-- chat_list_users: 获取系统用户与 Bot 列表
-- chat_send_message: 向指定频道发送消息或回复（支持 channelId, content, replyToMessageId）
-- chat_read_messages: 读取指定频道的最近历史消息
+【1. 聊天与 BOT 交互】（发消息、私聊、群聊时使用）
+- chat_send_message / chat_read_messages / chat_list_channels / chat_list_users
 
-【2. 在线白板与架构图 (Excalidraw)】
-- read_guide: 必读！元素排版尺寸规范与排版铁律
-- create_diagram: 一键生成 Excalidraw 架构图并返回公开分享直链
-- create_drawing / update_drawing / list_drawings / share_drawing: 迭代绘制与管理图纸
+【2. 在线白板与架构图 (Excalidraw)】（画图、架构图、可视化时使用）
+- read_guide / create_diagram / create_drawing / update_drawing / list_drawings / share_drawing
 
-【3. 云端记事本】
-- list_notes / get_note / create_note / update_note / delete_note / pin_note: 快捷笔记与置顶
+【3. 双 Agent 任务交接专线 (Handoff)】（听到“保存”、“交接”、“保存测试报告”时必须调用）
+- handoff_save: 保存测试报告并交接 (支持 project: "<项目名>", content, autoTimestamp: true)
+- handoff_get_new: 获取最新交接文件与各项目最新概览 (支持 project?: "<项目名>")
+- 规则：只要听到用户说“保存 / 交接 / 测试完成”，100% 走 handoff_save，绝不使用普通云存储！
 
-【4. 云端文件存储】
-- storage_list_files: 查看云端文件列表（支持关键词搜索）
-- storage_upload_file: 上传任意文档、图片、表格、压缩包或附件（支持文本或 Base64）
-- storage_get_file_info: 获取文件详情与下载直链
-- storage_delete_file: 永久删除指定文件
+【4. 普通云端文件存储】（常规网盘文件增删查改）
+- storage_list_files / storage_upload_file / storage_read_file / storage_get_file_info / storage_delete_file
 
-【5. 任务交接与协同测试看板 (WorkBuddy & Antigravity)】
-- storage_upload_file: 上传测试报告并交接 (支持 shareToken: "agent-shared", project: "<项目名>", autoTimestamp: true)
-- storage_get_latest_file: 获取各项目最新测试报告与全局最新裁决 (支持 shareToken: "agent-shared", project?: "<项目名>")
-- storage_read_file: 直接读取并解密任意云端测试报告/文档正文 (key: "<fileKey>")
-- 协同规则：测试执行完毕后，请自动将测试报告或排查文档存入 agent-共享免密目录/<项目名>，Antigravity 可自动依据最新报告进行代码排查与热修复！
-
-请根据我的指令选择合适的工具执行。在绘制架构图前，请先调用 read_guide 获取排版规则；发送消息时可自动选择 general (channelId: 1) 或目标会话。`;
+请严格按照上述语义车道执行指令。交接任务时严禁调用普通云存储工具；画图前请调用 read_guide 获取排版规则。`;
 });
 
 const mcpJsonConfig = computed(() => {
@@ -76,11 +64,11 @@ const curlExample = computed(() => {
 });
 
 const collabUploadCurl = computed(() => {
-  return `curl -X POST ${origin.value}/api/storage/shares/agent-shared/files -F "project=EdgeChat" -F "file=@test_report.md"`;
+  return `curl -X POST "${origin.value}/api/handoff/save" -F "project=EdgeChat" -F "file=@test_report.md"`;
 });
 
 const collabLatestCurl = computed(() => {
-  return `curl ${origin.value}/api/storage/shares/agent-shared/latest`;
+  return `curl "${origin.value}/api/handoff/latest"`;
 });
 
 const collabBoardUrl = computed(() => {
@@ -166,8 +154,12 @@ async function copyText(text, refState) {
         <span>Excalidraw 画布 (8 个工具)</span>
       </div>
       <div class="cap-badge">
+        <Terminal :size="14" />
+        <span>任务交接专线 (2 个工具)</span>
+      </div>
+      <div class="cap-badge">
         <HardDrive :size="14" />
-        <span>云存储 CRUD (4 个工具)</span>
+        <span>云存储 CRUD (6 个工具)</span>
       </div>
     </div>
 
@@ -241,49 +233,49 @@ async function copyText(text, refState) {
       <pre class="mcp-code-preview"><code>{{ curlExample }}</code></pre>
     </div>
 
-    <!-- 共享任务看板交接测试 CLI / cURL 命令 -->
+    <!-- 任务交接专线 CLI / cURL 命令 -->
     <div class="mcp-section-block">
       <div class="block-header">
-        <label>共享任务看板交接测试 CLI / cURL 命令</label>
-        <span class="block-hint">WorkBuddy & Antigravity 自动化协同测试与交接指令</span>
+        <label>任务交接专线 CLI / cURL 命令</label>
+        <span class="block-hint">WorkBuddy & Antigravity 双 Agent 任务交接专线自动化指令</span>
       </div>
       <div class="collab-cmd-list">
-        <!-- 1. 免密上传测试报告 -->
+        <!-- 1. WorkBuddy 保存交接 -->
         <div class="collab-cmd-item">
           <div class="cmd-label-row">
-            <span class="cmd-desc">1. 免密上传测试报告并交接给 Antigravity:</span>
+            <span class="cmd-desc">1. WorkBuddy 保存交接:</span>
             <button
               type="button"
               class="copy-pill-btn"
               @click="copyText(collabUploadCurl, copiedCollabCurl)"
             >
               <component :is="copiedCollabCurl ? Check : Copy" :size="13" />
-              <span>{{ copiedCollabCurl ? '已复制命令' : '复制上传命令' }}</span>
+              <span>{{ copiedCollabCurl ? '已复制命令' : '复制保存交接命令' }}</span>
             </button>
           </div>
           <pre class="mcp-code-preview"><code>{{ collabUploadCurl }}</code></pre>
         </div>
 
-        <!-- 2. 机器拉取各项目最新进展 -->
+        <!-- 2. Antigravity 获取最新交接 -->
         <div class="collab-cmd-item">
           <div class="cmd-label-row">
-            <span class="cmd-desc">2. 机器拉取各项目最新进展与全局裁决:</span>
+            <span class="cmd-desc">2. Antigravity 获取最新交接:</span>
             <button
               type="button"
               class="copy-pill-btn"
               @click="copyText(collabLatestCurl, copiedCollabLatest)"
             >
               <component :is="copiedCollabLatest ? Check : Copy" :size="13" />
-              <span>{{ copiedCollabLatest ? '已复制命令' : '复制拉取命令' }}</span>
+              <span>{{ copiedCollabLatest ? '已复制命令' : '复制获取交接命令' }}</span>
             </button>
           </div>
           <pre class="mcp-code-preview"><code>{{ collabLatestCurl }}</code></pre>
         </div>
 
-        <!-- 3. 浏览器免密直达看板 -->
+        <!-- 3. 人工免密直达看板 -->
         <div class="collab-cmd-item">
           <div class="cmd-label-row">
-            <span class="cmd-desc">3. 浏览器免密直达看板:</span>
+            <span class="cmd-desc">3. 人工免密直达看板:</span>
             <div class="header-actions">
               <button
                 type="button"

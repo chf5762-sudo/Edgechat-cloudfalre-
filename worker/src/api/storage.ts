@@ -1110,6 +1110,167 @@ export function registerStorageRoutes(app: any) {
     }, 201);
   });
 
+  // ═══════════════════════════════════════════════════════════════
+  // HANDOFF – Dedicated Task Handoff Channel (极简动词型)
+  // ═══════════════════════════════════════════════════════════════
+  async function handleHandoffSave(c: any) {
+    if (!c.env.FILES) return errorResponse('当前部署没有绑定 R2，无法上传文件', 503);
+
+    // Ensure agent-shared folder exists
+    const shared = await ensureAgentSharedFolder(c.env.DB);
+    const share = await c.env.DB.prepare(
+      `SELECT id, folder_id, owner_user_id FROM storage_shares WHERE token = ? LIMIT 1`
+    ).bind(AGENT_SHARED_TOKEN).first() as any;
+
+    if (!share || !share.folder_id) {
+      return errorResponse('未初始化任务交接共享目录', 500);
+    }
+
+    const contentTypeHeader = c.req.header('content-type') || '';
+    let rawFilename = '';
+    let fileBuffer: ArrayBuffer;
+    let mime = '';
+    let projectName = (c.req.query('project') || c.req.query('subfolder') || '').trim();
+    let autoTimestampParam = c.req.query('autoTimestamp');
+    let autoTimestamp = autoTimestampParam !== 'false' && autoTimestampParam !== '0';
+
+    if (contentTypeHeader.includes('multipart/form-data')) {
+      const formData = await c.req.formData();
+      const file = formData.get('file');
+      if (!(file instanceof File)) return errorResponse('请选择有效文件');
+      rawFilename = file.name;
+      fileBuffer = await file.arrayBuffer();
+      mime = file.type || getMimeTypeFromFilename(rawFilename);
+      const formProject = formData.get('project') || formData.get('subfolder');
+      if (formProject && !projectName) projectName = String(formProject).trim();
+      const formAutoTs = formData.get('autoTimestamp');
+      if (formAutoTs === 'false' || formAutoTs === '0') {
+        autoTimestamp = false;
+      }
+    } else {
+      const body = await c.req.json().catch(() => ({}));
+      rawFilename = body.filename || body.fileName || body.name || 'test_report.md';
+      const rawContent = body.content ?? body.contentBase64;
+      if (rawContent === undefined || rawContent === null) return errorResponse('文件内容不能为空');
+      const isBase64 = body.isBase64 || Boolean(body.contentBase64);
+      if (isBase64) {
+        const bin = atob(String(rawContent));
+        const u8 = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+        fileBuffer = u8.buffer;
+      } else {
+        fileBuffer = new TextEncoder().encode(String(rawContent)).buffer;
+      }
+      mime = body.contentType || body.content_type || getMimeTypeFromFilename(rawFilename);
+      if (body.project && !projectName) projectName = String(body.project).trim();
+      if (body.autoTimestamp === false) {
+        autoTimestamp = false;
+      }
+    }
+
+    // Default project to 'EdgeChat' if not provided
+    if (!projectName) {
+      projectName = 'EdgeChat';
+    }
+
+    const targetFolderId = await ensureProjectFolder(c.env.DB, share.folder_id, projectName, Number(share.owner_user_id) || 1);
+    const finalFilename = autoTimestamp ? applyAutoTimestamp(rawFilename) : rawFilename;
+
+    const ext = finalFilename.includes('.') ? finalFilename.slice(finalFilename.lastIndexOf('.')) : '';
+    const ownerUserId = Number(share.owner_user_id) || 1;
+    const key = `${ownerUserId}/${Date.now()}-${nanoid(10)}${ext}`;
+
+    let toStore: ArrayBuffer;
+    try {
+      toStore = await encryptAttachment(c.env, fileBuffer, key);
+    } catch {
+      toStore = fileBuffer;
+    }
+
+    await c.env.FILES.put(key, toStore, {
+      httpMetadata: { contentType: mime, cacheControl: 'private, no-store' },
+      customMetadata: { filename: finalFilename, edgechatEncryption: 'v1' },
+    });
+
+    const n = now();
+    await c.env.DB.prepare(
+      `INSERT INTO uploaded_files (object_key, owner_user_id, filename, content_type, size, folder_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(object_key) DO UPDATE SET filename = excluded.filename, size = excluded.size, folder_id = excluded.folder_id, updated_at = excluded.updated_at`
+    ).bind(key, ownerUserId, finalFilename, mime, fileBuffer.byteLength, targetFolderId, n, n).run();
+
+    const origin = new URL(c.req.url).origin;
+    const url = `${origin}/files/${encodeURIComponent(key)}`;
+
+    return c.json({
+      success: true,
+      file: {
+        key,
+        filename: finalFilename,
+        name: finalFilename,
+        size: fileBuffer.byteLength,
+        type: mime,
+        project: projectName,
+        folderId: targetFolderId,
+        url,
+        createdAt: n,
+        created_at: n,
+      }
+    }, 201);
+  }
+
+  async function handleHandoffLatest(c: any) {
+    await ensureAgentSharedFolder(c.env.DB);
+    const share = await c.env.DB.prepare(
+      `SELECT id, folder_id FROM storage_shares WHERE token = ? LIMIT 1`
+    ).bind(AGENT_SHARED_TOKEN).first() as any;
+
+    if (!share || !share.folder_id) {
+      return errorResponse('未初始化任务交接共享目录', 500);
+    }
+
+    const project = (c.req.query('project') || c.req.query('subfolder') || '').trim();
+    const isRaw = c.req.query('raw') === '1' || c.req.query('raw') === 'true';
+    const origin = new URL(c.req.url).origin;
+
+    const summary = await getProjectsLatestSummary(c.env, share.folder_id, origin);
+
+    let targetFile = summary.overallLatest;
+    if (project) {
+      const proj = summary.projects.find(p => p.project.toLowerCase() === project.toLowerCase());
+      targetFile = proj?.latestFile || null;
+    }
+
+    if (isRaw) {
+      if (!targetFile || !targetFile.content) {
+        return new Response(project ? `项目 ${project} 暂无文件` : '暂无最新文件', {
+          status: 404,
+          headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+        });
+      }
+      return new Response(targetFile.content, {
+        headers: {
+          'Content-Type': targetFile.type || 'text/plain; charset=utf-8',
+          'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(targetFile.filename)}`,
+          'Cache-Control': 'no-cache',
+        }
+      });
+    }
+
+    return c.json({
+      success: true,
+      overallLatest: summary.overallLatest,
+      file: targetFile,
+      projects: summary.projects,
+      ...(project && !targetFile ? { message: `项目 ${project} 暂无文件` } : {}),
+    });
+  }
+
+  app.post('/api/handoff/save', handleHandoffSave);
+  app.post('/api/handoff/new', handleHandoffSave);
+  app.get('/api/handoff/latest', handleHandoffLatest);
+  app.get('/api/handoff/new', handleHandoffLatest);
+
   // 4. GET /api/storage/share-view/:token (HTML view & JSON view)
   app.get('/api/storage/share-view/:token', async (c: any) => {
     const token = c.req.param('token');

@@ -342,6 +342,174 @@ async function runTests() {
     return true;
   });
 
+  // 10. Dedicated Handoff REST Endpoints (/api/handoff/save, /api/handoff/new, /api/handoff/latest)
+  let handoffTestKey = null;
+  await test('10. Dedicated Handoff REST Endpoints (/api/handoff/save, latest, new)', async () => {
+    // 10a. POST /api/handoff/save (JSON body, unauthenticated)
+    const saveRes = await fetch(`${BASE_URL}/api/handoff/save`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        project: 'HandoffPipeSuite',
+        filename: 'handoff_save_sample.md',
+        content: '# Handoff Save Sample\nPipeline is fully functional.',
+      }),
+    });
+    if (!saveRes.ok) throw new Error(`POST /api/handoff/save failed with HTTP ${saveRes.status}: ${await saveRes.text()}`);
+    const saveData = await saveRes.json();
+    if (!saveData.success || !saveData.file?.key) throw new Error(`POST /api/handoff/save invalid response: ${JSON.stringify(saveData)}`);
+    if (!/^\d{8}_\d{6}_handoff_save_sample\.md$/.test(saveData.file.filename)) {
+      throw new Error(`Filename missing auto-timestamp prefix: ${saveData.file.filename}`);
+    }
+    if (saveData.file.project !== 'HandoffPipeSuite') {
+      throw new Error(`Expected project "HandoffPipeSuite", got ${saveData.file.project}`);
+    }
+    handoffTestKey = saveData.file.key;
+
+    // 10b. POST /api/handoff/new (alias for save)
+    const newSaveRes = await fetch(`${BASE_URL}/api/handoff/new`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        project: 'HandoffPipeSuite',
+        filename: 'handoff_new_sample.md',
+        content: '# Handoff New Sample\nSecond test report payload.',
+      }),
+    });
+    if (!newSaveRes.ok) throw new Error(`POST /api/handoff/new failed with HTTP ${newSaveRes.status}: ${await newSaveRes.text()}`);
+    const newSaveData = await newSaveRes.json();
+    if (!newSaveData.success || !newSaveData.file?.key) throw new Error(`POST /api/handoff/new invalid response: ${JSON.stringify(newSaveData)}`);
+
+    // 10c. GET /api/handoff/latest?project=HandoffPipeSuite
+    const latestRes = await fetch(`${BASE_URL}/api/handoff/latest?project=HandoffPipeSuite`);
+    if (!latestRes.ok) throw new Error(`GET /api/handoff/latest failed with HTTP ${latestRes.status}: ${await latestRes.text()}`);
+    const latestData = await latestRes.json();
+    if (!latestData.success || !latestData.file) throw new Error(`GET /api/handoff/latest invalid response: ${JSON.stringify(latestData)}`);
+    if (!latestData.file.content?.includes('# Handoff New Sample')) {
+      throw new Error(`GET /api/handoff/latest expected newest file content, got: ${latestData.file.content}`);
+    }
+
+    // 10d. GET /api/handoff/latest?project=HandoffPipeSuite&raw=1
+    const rawRes = await fetch(`${BASE_URL}/api/handoff/latest?project=HandoffPipeSuite&raw=1`);
+    if (!rawRes.ok) throw new Error(`GET /api/handoff/latest?raw=1 failed with HTTP ${rawRes.status}: ${await rawRes.text()}`);
+    const rawText = await rawRes.text();
+    if (!rawText.includes('# Handoff New Sample')) {
+      throw new Error(`GET /api/handoff/latest?raw=1 content mismatch: ${rawText}`);
+    }
+
+    // 10e. GET /api/handoff/new (alias for latest)
+    const aliasRes = await fetch(`${BASE_URL}/api/handoff/new?project=HandoffPipeSuite`);
+    if (!aliasRes.ok) throw new Error(`GET /api/handoff/new failed with HTTP ${aliasRes.status}: ${await aliasRes.text()}`);
+    const aliasData = await aliasRes.json();
+    if (!aliasData.success || !aliasData.file) throw new Error(`GET /api/handoff/new invalid response: ${JSON.stringify(aliasData)}`);
+
+    // 10f. GET /api/handoff/latest (without project: Multi-project aggregation)
+    const aggRes = await fetch(`${BASE_URL}/api/handoff/latest`);
+    if (!aggRes.ok) throw new Error(`GET /api/handoff/latest (aggregation) failed with HTTP ${aggRes.status}: ${await aggRes.text()}`);
+    const aggData = await aggRes.json();
+    if (!aggData.success || !aggData.overallLatest || !Array.isArray(aggData.projects)) {
+      throw new Error(`GET /api/handoff/latest aggregation format mismatch: ${JSON.stringify(aggData)}`);
+    }
+
+    return true;
+  });
+
+  // 11. Dedicated Handoff MCP Tools (handoff_save & handoff_get_new)
+  await test('11. Dedicated Handoff MCP Tools (handoff_save & handoff_get_new)', async () => {
+    // 11a. MCP handoff_save
+    const mcpSavePayload = {
+      jsonrpc: '2.0',
+      id: 111,
+      method: 'tools/call',
+      params: {
+        name: 'handoff_save',
+        arguments: {
+          project: 'HandoffDedicatedMcp',
+          filename: 'mcp_handoff_run.md',
+          content: '# MCP Dedicated Handoff\nExecuted via handoff_save tool.',
+          autoTimestamp: true,
+        },
+      },
+    };
+    const mcpSaveRes = await fetch(`${BASE_URL}/api/mcp/message`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json, text/event-stream',
+        'Authorization': `Bearer ${PASSCODE}`,
+      },
+      body: JSON.stringify(mcpSavePayload),
+    });
+    if (!mcpSaveRes.ok) throw new Error(`MCP handoff_save HTTP ${mcpSaveRes.status}`);
+    const mcpSaveData = await mcpSaveRes.json();
+    const saveResult = JSON.parse(mcpSaveData.result?.content?.[0]?.text || '{}');
+    if (!saveResult.success || !saveResult.file?.key) {
+      throw new Error(`MCP handoff_save failed: ${JSON.stringify(mcpSaveData)}`);
+    }
+    if (!/^\d{8}_\d{6}_mcp_handoff_run\.md$/.test(saveResult.file.filename)) {
+      throw new Error(`MCP handoff_save filename missing timestamp: ${saveResult.file.filename}`);
+    }
+
+    // 11b. MCP handoff_get_new (JSON)
+    const mcpGetPayload = {
+      jsonrpc: '2.0',
+      id: 112,
+      method: 'tools/call',
+      params: {
+        name: 'handoff_get_new',
+        arguments: {
+          project: 'HandoffDedicatedMcp',
+        },
+      },
+    };
+    const mcpGetRes = await fetch(`${BASE_URL}/api/mcp/message`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json, text/event-stream',
+        'Authorization': `Bearer ${PASSCODE}`,
+      },
+      body: JSON.stringify(mcpGetPayload),
+    });
+    if (!mcpGetRes.ok) throw new Error(`MCP handoff_get_new HTTP ${mcpGetRes.status}`);
+    const mcpGetData = await mcpGetRes.json();
+    const getResult = JSON.parse(mcpGetData.result?.content?.[0]?.text || '{}');
+    if (!getResult.success || !getResult.file?.content?.includes('# MCP Dedicated Handoff')) {
+      throw new Error(`MCP handoff_get_new content mismatch: ${JSON.stringify(getResult)}`);
+    }
+
+    // 11c. MCP handoff_get_new (raw)
+    const mcpRawPayload = {
+      jsonrpc: '2.0',
+      id: 113,
+      method: 'tools/call',
+      params: {
+        name: 'handoff_get_new',
+        arguments: {
+          project: 'HandoffDedicatedMcp',
+          raw: true,
+        },
+      },
+    };
+    const mcpRawRes = await fetch(`${BASE_URL}/api/mcp/message`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json, text/event-stream',
+        'Authorization': `Bearer ${PASSCODE}`,
+      },
+      body: JSON.stringify(mcpRawPayload),
+    });
+    if (!mcpRawRes.ok) throw new Error(`MCP handoff_get_new (raw) HTTP ${mcpRawRes.status}`);
+    const mcpRawData = await mcpRawRes.json();
+    const rawResultText = JSON.parse(mcpRawData.result?.content?.[0]?.text || '""');
+    if (!String(rawResultText).includes('# MCP Dedicated Handoff')) {
+      throw new Error(`MCP handoff_get_new (raw) text mismatch: ${rawResultText}`);
+    }
+
+    return true;
+  });
+
   console.log('\n=== Collaborative Pipeline Test Results ===');
   const passedCount = results.filter(r => r.passed).length;
   console.log(`Passed: ${passedCount} / ${results.length}`);

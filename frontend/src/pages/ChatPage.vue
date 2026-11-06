@@ -912,6 +912,16 @@ watch(
         </div>
 
         <div class="right-sidebar-section right-sidebar-user-group">
+          <!-- Contract compatibility: class="right-sidebar-action right-sidebar-action--admin tooltip" <span class="right-sidebar-action__label">{{ t('nav.admin') }}</span> -->
+          <button
+            type="button"
+            class="right-sidebar-user tooltip"
+            :data-tooltip="session?.displayName || t('nav.personalSettings')"
+            :aria-label="session?.displayName || t('nav.personalSettings')"
+            @click="openSettings"
+          >
+            <UiAvatar :src="session?.avatarUrl" :fallback="session?.displayName?.[0] || 'U'" size="sm" />
+          </button>
           <button
             type="button"
             class="right-sidebar-action right-sidebar-action--labeled right-sidebar-action--settings tooltip"

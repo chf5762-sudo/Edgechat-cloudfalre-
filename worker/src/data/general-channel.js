@@ -1,14 +1,35 @@
-﻿export const GENERAL_CHANNEL_NAME = "general";
+export const GENERAL_CHANNEL_NAME = "general";
 
 export function isGeneralChannel(channel) {
 	return channel?.kind !== "dm" && channel?.name === GENERAL_CHANNEL_NAME;
 }
 
 export function isReservedGeneralChannelName(name) {
-	return false;
+	return String(name || "").trim().toLowerCase() === GENERAL_CHANNEL_NAME;
 }
 
 export async function ensureGeneralChannelMembership(db, userId) {
-	// general 预置全员群组已彻底停用并移除，新用户仅在被管理员手动拉入时才可见群
-	return;
+	const normalizedUserId = Number(userId);
+	if (!Number.isInteger(normalizedUserId) || normalizedUserId <= 0) {
+		throw new TypeError("general 群组成员必须是有效用户");
+	}
+
+	await db.batch([
+		db
+			.prepare(
+				`INSERT OR IGNORE INTO channels (name, description, kind, created_by)
+				 VALUES (?, '', 'public', NULL)`,
+			)
+			.bind(GENERAL_CHANNEL_NAME),
+		db
+			.prepare(
+				`INSERT OR IGNORE INTO channel_members (channel_id, user_id, role, invited_by)
+				 SELECT c.id, ?, 'member', NULL
+				 FROM channels c
+				 WHERE c.name = ?
+				   AND c.kind = 'public'
+				   AND c.deleted_at IS NULL`,
+			)
+			.bind(normalizedUserId, GENERAL_CHANNEL_NAME),
+	]);
 }

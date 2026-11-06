@@ -50,9 +50,10 @@ export function isPdfAttachment(attachment) {
   if (!attachment) {
     return false;
   }
-  if (cleanMimeType(attachment?.type) === 'application/pdf') {
-    return true;
+  const mimeType = cleanMimeType(attachment.type);
+  if (mimeType) {
+    return mimeType === 'application/pdf';
   }
-  const extension = extensionFrom(attachment?.name) || extensionFrom(attachment?.url);
+  const extension = extensionFrom(attachment.name) || extensionFrom(attachment.url);
   return extension === 'pdf';
 }

@@ -124,6 +124,32 @@ export async function canAccessFile(db, key, userId = null, trustedOrigins = [])
 	if (!cleanKey) return false;
 
 	// 头像与当前站点图标是公开资料；未保存的上传仍需上传者认证才能预览。
+	// 共享文件与免密协作目录（含其所有子项目文件夹）自动免密公开可读
+	const sharedCheck = await db
+		.prepare(
+			`SELECT (
+			   EXISTS (SELECT 1 FROM storage_shares WHERE object_key = ?)
+			   OR EXISTS (
+			     SELECT 1 FROM uploaded_files uf
+			     WHERE uf.object_key = ? AND uf.folder_id IS NOT NULL
+			       AND uf.folder_id IN (
+			         WITH RECURSIVE sf AS (
+			           SELECT id FROM storage_folders WHERE name = 'agent-共享免密目录'
+			           UNION ALL
+			           SELECT f.id FROM storage_folders f JOIN sf ON f.parent_id = sf.id
+			         )
+			         SELECT id FROM sf
+			         UNION
+			         SELECT folder_id FROM storage_shares WHERE folder_id IS NOT NULL
+			       )
+			   )
+			 ) AS is_public_shared`
+		)
+		.bind(cleanKey, cleanKey)
+		.all()
+		.catch(() => ({ results: [] }));
+	if (sharedCheck.results?.[0]?.is_public_shared) return true;
+
 	const publicRefs = await db
 		.prepare(
 			`SELECT (

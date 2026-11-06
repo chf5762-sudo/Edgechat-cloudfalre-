@@ -5,6 +5,14 @@ import { drizzle } from 'drizzle-orm/d1'
 import { z } from 'zod'
 import { drawings, shares, notes } from '../../db/schema.ts'
 import { generatePng } from '../export/png.ts'
+import {
+  ensureAgentSharedFolder,
+  ensureProjectFolder,
+  getDescendantFolderIds,
+  applyAutoTimestamp,
+  AGENT_SHARED_FOLDER_NAME,
+  AGENT_SHARED_TOKEN,
+} from '../../../api/storage.ts'
 
 type Env = {
   DB: D1Database
@@ -994,7 +1002,7 @@ export function registerTools(server: McpServer) {
   // ─── storage_upload_file ───
   server.tool(
     'storage_upload_file',
-    'Upload a document, attachment, image, or file to cloud storage. Accepts text content or base64 encoded data.',
+    'Upload a document, attachment, image, or file to cloud storage. Accepts text content or base64 encoded data. Supports folderId, shareToken, project subfolder, and autoTimestamp.',
     {
       filename: z.string().optional().describe('File name including extension (e.g. report.pdf, doc.md, data.json)'),
       fileName: z.string().optional().describe('Alias for filename'),
@@ -1002,9 +1010,13 @@ export function registerTools(server: McpServer) {
       contentBase64: z.string().optional().describe('Alias for content (when isBase64 is true)'),
       isBase64: z.boolean().optional().describe('Whether the content is base64 encoded (default false)'),
       contentType: z.string().optional().describe('MIME type (optional, inferred from extension if omitted)'),
+      folderId: z.number().optional().describe('Folder ID to upload the file into (optional)'),
+      shareToken: z.string().optional().describe('Share token (e.g. "agent-shared") to resolve folder automatically (optional)'),
+      project: z.string().optional().describe('Project subfolder name inside shared folder (optional)'),
+      autoTimestamp: z.boolean().optional().describe('Prefix filename with YYYYMMDD_HHmmss_ (default false)'),
     },
     async (args) => {
-      const filename = args.filename || args.fileName
+      let filename = args.filename || args.fileName
       if (!filename) return error('filename is required')
       const rawContent = args.content ?? args.contentBase64
       if (rawContent === undefined || rawContent === null) return error('content is required')
@@ -1014,6 +1026,39 @@ export function registerTools(server: McpServer) {
       const ctx = getContext('current')
       if (!ctx) return error('No auth context')
       const db = ctx.env.DB
+
+      // Resolve target folder and owner
+      let targetFolderId: number | null = args.folderId ?? null
+      let targetOwnerId = Number(ctx.userId) || 1
+
+      if (args.shareToken) {
+        if (args.shareToken === AGENT_SHARED_TOKEN) {
+          const agentFolder = await ensureAgentSharedFolder(db)
+          targetFolderId = agentFolder.id
+          targetOwnerId = agentFolder.ownerUserId
+        } else {
+          const shareRow = await db.prepare(
+            `SELECT folder_id, owner_user_id FROM storage_shares WHERE token = ? LIMIT 1`
+          ).bind(args.shareToken).first() as any
+          if (shareRow?.folder_id) {
+            targetFolderId = shareRow.folder_id
+            targetOwnerId = Number(shareRow.owner_user_id) || targetOwnerId
+          }
+        }
+      }
+
+      if (args.project) {
+        if (!targetFolderId) {
+          const agentFolder = await ensureAgentSharedFolder(db)
+          targetFolderId = agentFolder.id
+          targetOwnerId = agentFolder.ownerUserId
+        }
+        targetFolderId = await ensureProjectFolder(db, targetFolderId, args.project, targetOwnerId)
+      }
+
+      if (args.autoTimestamp) {
+        filename = applyAutoTimestamp(filename)
+      }
 
       let bytes: Uint8Array
       if (isBase64) {
@@ -1026,7 +1071,7 @@ export function registerTools(server: McpServer) {
 
       const mime = contentType || getMimeTypeFromFilename(filename)
       const ext = filename.includes('.') ? filename.slice(filename.lastIndexOf('.')) : ''
-      const key = `1/${Date.now()}-${nanoid(10)}${ext}`
+      const key = `${targetOwnerId}/${Date.now()}-${nanoid(10)}${ext}`
 
       // Encrypt and store to R2
       const envWithStorage = ctx.env as any
@@ -1050,10 +1095,10 @@ export function registerTools(server: McpServer) {
 
       // Record in uploaded_files
       await db.prepare(
-        `INSERT INTO uploaded_files (object_key, owner_user_id, filename, content_type, size, created_at)
-         VALUES (?, 1, ?, ?, ?, CURRENT_TIMESTAMP)
-         ON CONFLICT(object_key) DO UPDATE SET filename = excluded.filename, size = excluded.size`
-      ).bind(key, filename, mime, bytes.byteLength).run()
+        `INSERT INTO uploaded_files (object_key, owner_user_id, filename, content_type, size, folder_id, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+         ON CONFLICT(object_key) DO UPDATE SET filename = excluded.filename, size = excluded.size, folder_id = excluded.folder_id`
+      ).bind(key, targetOwnerId, filename, mime, bytes.byteLength, targetFolderId).run()
 
       const fileUrl = `${ctx.origin}/files/${encodeURIComponent(key)}`
       return text({
@@ -1061,8 +1106,11 @@ export function registerTools(server: McpServer) {
         file: {
           key,
           name: filename,
+          filename,
           type: mime,
           size: bytes.byteLength,
+          folderId: targetFolderId,
+          project: args.project || null,
           url: fileUrl,
         },
       })
@@ -1122,6 +1170,195 @@ export function registerTools(server: McpServer) {
       await db.prepare('DELETE FROM uploaded_files WHERE object_key = ?').bind(key).run()
 
       return text({ deleted: true, key })
+    }
+  )
+
+  // ─── storage_get_latest_file ───
+  server.tool(
+    'storage_get_latest_file',
+    'Get the latest uploaded file metadata and its decrypted text content from cloud storage or a specific folder/project.',
+    {
+      folderId: z.number().optional().describe('Folder ID to get latest file from (optional)'),
+      shareToken: z.string().optional().describe('Share token (e.g. "agent-shared") to query (optional)'),
+      folderName: z.string().optional().describe('Folder name to search in (optional)'),
+      project: z.string().optional().describe('Project subfolder name inside shared folder (optional)'),
+    },
+    async (args) => {
+      const ctx = getContext('current')
+      if (!ctx) return error('No auth context')
+      const db = ctx.env.DB
+
+      let targetFolderIds: number[] = []
+
+      if (args.shareToken) {
+        if (args.shareToken === AGENT_SHARED_TOKEN) {
+          const agentFolder = await ensureAgentSharedFolder(db)
+          if (args.project) {
+            const projFolder = await db.prepare(
+              `SELECT id FROM storage_folders WHERE parent_id = ? AND name = ? AND trashed_at IS NULL AND deleted_at IS NULL LIMIT 1`
+            ).bind(agentFolder.id, args.project).first() as any
+            if (projFolder?.id) {
+              targetFolderIds = await getDescendantFolderIds(db, projFolder.id)
+            } else {
+              return error(`Project "${args.project}" not found in shared folder`)
+            }
+          } else {
+            targetFolderIds = await getDescendantFolderIds(db, agentFolder.id)
+          }
+        } else {
+          const shareRow = await db.prepare(
+            `SELECT folder_id FROM storage_shares WHERE token = ? LIMIT 1`
+          ).bind(args.shareToken).first() as any
+          if (shareRow?.folder_id) {
+            if (args.project) {
+              const projFolder = await db.prepare(
+                `SELECT id FROM storage_folders WHERE parent_id = ? AND name = ? AND trashed_at IS NULL AND deleted_at IS NULL LIMIT 1`
+              ).bind(shareRow.folder_id, args.project).first() as any
+              if (projFolder?.id) {
+                targetFolderIds = await getDescendantFolderIds(db, projFolder.id)
+              }
+            } else {
+              targetFolderIds = await getDescendantFolderIds(db, shareRow.folder_id)
+            }
+          }
+        }
+      } else if (args.folderName) {
+        const fld = await db.prepare(
+          `SELECT id FROM storage_folders WHERE name = ? AND trashed_at IS NULL AND deleted_at IS NULL LIMIT 1`
+        ).bind(args.folderName).first() as any
+        if (fld?.id) {
+          if (args.project) {
+            const projFolder = await db.prepare(
+              `SELECT id FROM storage_folders WHERE parent_id = ? AND name = ? AND trashed_at IS NULL AND deleted_at IS NULL LIMIT 1`
+            ).bind(fld.id, args.project).first() as any
+            if (projFolder?.id) targetFolderIds = await getDescendantFolderIds(db, projFolder.id)
+          } else {
+            targetFolderIds = await getDescendantFolderIds(db, fld.id)
+          }
+        }
+      } else if (args.folderId) {
+        if (args.project) {
+          const projFolder = await db.prepare(
+            `SELECT id FROM storage_folders WHERE parent_id = ? AND name = ? AND trashed_at IS NULL AND deleted_at IS NULL LIMIT 1`
+          ).bind(args.folderId, args.project).first() as any
+          if (projFolder?.id) targetFolderIds = await getDescendantFolderIds(db, projFolder.id)
+        } else {
+          targetFolderIds = await getDescendantFolderIds(db, args.folderId)
+        }
+      } else if (args.project) {
+        const agentFolder = await ensureAgentSharedFolder(db)
+        const projFolder = await db.prepare(
+          `SELECT id FROM storage_folders WHERE parent_id = ? AND name = ? AND trashed_at IS NULL AND deleted_at IS NULL LIMIT 1`
+        ).bind(agentFolder.id, args.project).first() as any
+        if (projFolder?.id) {
+          targetFolderIds = await getDescendantFolderIds(db, projFolder.id)
+        } else {
+          return error(`Project "${args.project}" not found`)
+        }
+      }
+
+      let sql = `
+        SELECT uf.object_key, uf.owner_user_id, uf.filename, uf.content_type, uf.size, uf.created_at, uf.folder_id, f.name as folder_name
+        FROM uploaded_files uf
+        LEFT JOIN storage_folders f ON f.id = uf.folder_id
+        WHERE NOT EXISTS (SELECT 1 FROM pending_r2_delete WHERE pending_r2_delete.object_key = uf.object_key)
+          AND uf.trashed_at IS NULL
+      `
+      const params: any[] = []
+      if (targetFolderIds.length > 0) {
+        const placeholders = targetFolderIds.map(() => '?').join(',')
+        sql += ` AND uf.folder_id IN (${placeholders})`
+        params.push(...targetFolderIds)
+      }
+      sql += ` ORDER BY uf.created_at DESC LIMIT 1`
+
+      const row = await db.prepare(sql).bind(...params).first() as any
+      if (!row) return error('No files found')
+
+      // Decrypt text content from R2
+      let textContent = ''
+      const envWithStorage = ctx.env as any
+      const filesBucket = envWithStorage.FILES || envWithStorage.STORAGE
+      if (filesBucket) {
+        const obj = await filesBucket.get(row.object_key)
+        if (obj) {
+          const buf = await obj.arrayBuffer()
+          try {
+            const { decryptAttachment } = await import('../../../encryption.js' as any)
+            const dec = await decryptAttachment(ctx.env, buf, row.object_key)
+            textContent = new TextDecoder('utf-8').decode(dec.bytes)
+          } catch {
+            textContent = new TextDecoder('utf-8').decode(new Uint8Array(buf))
+          }
+        }
+      }
+
+      return text({
+        file: {
+          key: row.object_key,
+          name: row.filename,
+          filename: row.filename,
+          type: row.content_type,
+          size: Number(row.size || 0),
+          folderId: row.folder_id,
+          folderName: row.folder_name,
+          project: row.folder_name && row.folder_name !== AGENT_SHARED_FOLDER_NAME ? row.folder_name : null,
+          url: `${ctx.origin}/files/${encodeURIComponent(row.object_key)}`,
+          createdAt: row.created_at,
+          content: textContent,
+        },
+      })
+    }
+  )
+
+  // ─── storage_read_file ───
+  server.tool(
+    'storage_read_file',
+    'Read and decrypt the text content of any file in cloud storage by its key.',
+    {
+      key: z.string().describe('File object_key in storage'),
+    },
+    async ({ key }) => {
+      const ctx = getContext('current')
+      if (!ctx) return error('No auth context')
+      const db = ctx.env.DB
+
+      const row = await db.prepare(
+        `SELECT object_key, owner_user_id, filename, content_type, size, created_at, folder_id
+         FROM uploaded_files
+         WHERE object_key = ? LIMIT 1`
+      ).bind(key).first() as any
+
+      if (!row) return error('File not found')
+
+      const envWithStorage = ctx.env as any
+      const filesBucket = envWithStorage.FILES || envWithStorage.STORAGE
+      if (!filesBucket) return error('Storage bucket not configured')
+
+      const obj = await filesBucket.get(key)
+      if (!obj) return error('File object not found in storage bucket')
+
+      let textContent = ''
+      const buf = await obj.arrayBuffer()
+      try {
+        const { decryptAttachment } = await import('../../../encryption.js' as any)
+        const dec = await decryptAttachment(ctx.env, buf, key)
+        textContent = new TextDecoder('utf-8').decode(dec.bytes)
+      } catch {
+        textContent = new TextDecoder('utf-8').decode(new Uint8Array(buf))
+      }
+
+      return text({
+        file: {
+          key: row.object_key,
+          filename: row.filename,
+          name: row.filename,
+          size: Number(row.size || 0),
+          contentType: row.content_type,
+          createdAt: row.created_at,
+          content: textContent,
+        },
+      })
     }
   )
 }

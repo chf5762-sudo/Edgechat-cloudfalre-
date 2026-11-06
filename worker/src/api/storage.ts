@@ -19,6 +19,137 @@ function nanoid(len = 16) {
 
 function now() { return new Date().toISOString(); }
 
+export const AGENT_SHARED_FOLDER_NAME = 'agent-共享免密目录';
+export const AGENT_SHARED_TOKEN = 'agent-shared';
+
+export function formatTimestampPrefix(date = new Date()): string {
+  const YYYY = date.getUTCFullYear();
+  const MM = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const DD = String(date.getUTCDate()).padStart(2, '0');
+  const hh = String(date.getUTCHours()).padStart(2, '0');
+  const mm = String(date.getUTCMinutes()).padStart(2, '0');
+  const ss = String(date.getUTCSeconds()).padStart(2, '0');
+  return `${YYYY}${MM}${DD}_${hh}${mm}${ss}`;
+}
+
+export function applyAutoTimestamp(originalName: string): string {
+  let name = (originalName || 'report.md').trim();
+  name = name.split('/').pop() || name;
+  name = name.split('\\').pop() || name;
+  if (/^\d{8}_\d{6}_/.test(name)) {
+    return name;
+  }
+  const prefix = formatTimestampPrefix();
+  return `${prefix}_${name}`;
+}
+
+export function getMimeTypeFromFilename(filename: string): string {
+  const ext = filename.split('.').pop()?.toLowerCase() || '';
+  const map: Record<string, string> = {
+    pdf: 'application/pdf',
+    txt: 'text/plain',
+    md: 'text/markdown',
+    json: 'application/json',
+    csv: 'text/csv',
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    gif: 'image/gif',
+    svg: 'image/svg+xml',
+    webp: 'image/webp',
+    zip: 'application/zip',
+    tar: 'application/x-tar',
+    gz: 'application/gzip',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    mp3: 'audio/mpeg',
+    mp4: 'video/mp4',
+    wav: 'audio/wav',
+    html: 'text/plain',
+    js: 'text/javascript',
+    ts: 'text/plain',
+    py: 'text/plain',
+  };
+  return map[ext] || 'application/octet-stream';
+}
+
+export async function ensureAgentSharedFolder(db: any): Promise<{ id: number; token: string; ownerUserId: number }> {
+  let folder = await db.prepare(
+    `SELECT id, owner_user_id FROM storage_folders WHERE name = ? AND trashed_at IS NULL AND deleted_at IS NULL LIMIT 1`
+  ).bind(AGENT_SHARED_FOLDER_NAME).first() as any;
+
+  let ownerUserId = 1;
+  if (!folder) {
+    const admin = await db.prepare(`SELECT id FROM users WHERE is_admin = 1 ORDER BY id ASC LIMIT 1`).first() as any;
+    if (admin?.id) ownerUserId = admin.id;
+
+    const n = now();
+    const res = await db.prepare(
+      `INSERT INTO storage_folders (owner_user_id, parent_id, name, created_at, updated_at)
+       VALUES (?, NULL, ?, ?, ?)`
+    ).bind(ownerUserId, AGENT_SHARED_FOLDER_NAME, n, n).run();
+    folder = { id: res.meta.last_row_id, owner_user_id: ownerUserId };
+  } else {
+    ownerUserId = Number(folder.owner_user_id) || 1;
+  }
+
+  const existingShare = await db.prepare(
+    `SELECT id, token, folder_id FROM storage_shares WHERE token = ? LIMIT 1`
+  ).bind(AGENT_SHARED_TOKEN).first() as any;
+
+  if (!existingShare) {
+    await db.prepare(
+      `INSERT INTO storage_shares (id, folder_id, owner_user_id, token, created_at)
+       VALUES (?, ?, ?, ?, ?)`
+    ).bind(nanoid(16), folder.id, ownerUserId, AGENT_SHARED_TOKEN, now()).run();
+  } else if (existingShare.folder_id !== folder.id) {
+    await db.prepare(
+      `UPDATE storage_shares SET folder_id = ? WHERE token = ?`
+    ).bind(folder.id, AGENT_SHARED_TOKEN).run();
+  }
+
+  return { id: folder.id, token: AGENT_SHARED_TOKEN, ownerUserId };
+}
+
+export async function getDescendantFolderIds(db: any, rootFolderId: number): Promise<number[]> {
+  try {
+    const { results } = await db.prepare(
+      `WITH RECURSIVE sf AS (
+         SELECT id FROM storage_folders WHERE id = ?
+         UNION ALL
+         SELECT f.id FROM storage_folders f JOIN sf ON f.parent_id = sf.id
+         WHERE f.trashed_at IS NULL AND f.deleted_at IS NULL
+       )
+       SELECT id FROM sf`
+    ).bind(rootFolderId).all();
+    return (results || []).map((r: any) => Number(r.id));
+  } catch {
+    const { results } = await db.prepare(
+      `SELECT id FROM storage_folders WHERE (id = ? OR parent_id = ?) AND trashed_at IS NULL AND deleted_at IS NULL`
+    ).bind(rootFolderId, rootFolderId).all();
+    return (results || []).map((r: any) => Number(r.id));
+  }
+}
+
+export async function ensureProjectFolder(db: any, rootFolderId: number, projectName: string, ownerUserId: number): Promise<number> {
+  const cleanName = projectName.trim();
+  if (!cleanName) return rootFolderId;
+
+  const existing = await db.prepare(
+    `SELECT id FROM storage_folders WHERE parent_id = ? AND name = ? AND trashed_at IS NULL AND deleted_at IS NULL LIMIT 1`
+  ).bind(rootFolderId, cleanName).first() as any;
+
+  if (existing?.id) return existing.id;
+
+  const n = now();
+  const res = await db.prepare(
+    `INSERT INTO storage_folders (owner_user_id, parent_id, name, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?)`
+  ).bind(ownerUserId, rootFolderId, cleanName, n, n).run();
+  return res.meta.last_row_id;
+}
+
 async function requireOwner(c: any, type: 'file' | 'folder', id: string) {
   const session = c.get('session');
   if (type === 'file') {
@@ -30,7 +161,7 @@ async function requireOwner(c: any, type: 'file' | 'folder', id: string) {
     return row;
   } else {
     const row = await c.env.DB.prepare(
-      `SELECT owner_user_id, trashed_at FROM storage_folders WHERE id = ? LIMIT 1`
+      `SELECT owner_user_id, name, trashed_at FROM storage_folders WHERE id = ? LIMIT 1`
     ).bind(id).first() as any;
     if (!row) throw new ApiError('文件夹不存在', 404);
     if (row.owner_user_id !== session.userId && !session.isAdmin) throw new ApiError('无权操作此文件夹', 403);
@@ -313,9 +444,10 @@ export function registerStorageRoutes(app: any) {
     for (const rawFid of folder_ids) {
       const fid = Number(rawFid);
       const row = await c.env.DB.prepare(
-        `SELECT owner_user_id FROM storage_folders WHERE id = ? LIMIT 1`
+        `SELECT owner_user_id, name FROM storage_folders WHERE id = ? LIMIT 1`
       ).bind(fid).first() as any;
       if (!row || (row.owner_user_id !== session.userId && !session.isAdmin)) continue;
+      if (row.name === AGENT_SHARED_FOLDER_NAME && (action === 'delete' || action === 'permanent-delete')) continue;
 
       if (action === 'delete') {
         await c.env.DB.prepare(
@@ -433,7 +565,10 @@ export function registerStorageRoutes(app: any) {
   // ═══════════════════════════════════════════════════════════════
   app.patch('/api/storage/folders/:id', async (c: any) => {
     const id = Number(c.req.param('id'));
-    await requireOwner(c, 'folder', String(id));
+    const row = await requireOwner(c, 'folder', String(id));
+    if (row.name === AGENT_SHARED_FOLDER_NAME) {
+      return errorResponse('该共享免密目录为系统受保护根目录，不可重命名', 403);
+    }
     const body = await c.req.json().catch(() => ({}));
     const name = (body.name || '').trim();
     if (!name) return errorResponse('请输入文件夹名称');
@@ -449,6 +584,9 @@ export function registerStorageRoutes(app: any) {
   app.delete('/api/storage/folders/:id', async (c: any) => {
     const id = Number(c.req.param('id'));
     const row = await requireOwner(c, 'folder', String(id));
+    if (row.name === AGENT_SHARED_FOLDER_NAME) {
+      return errorResponse('该共享免密目录为系统受保护根目录，不可删除', 403);
+    }
     const permanent = c.req.query('permanent') === '1';
 
     if (permanent || row.trashed_at) {
@@ -512,10 +650,315 @@ export function registerStorageRoutes(app: any) {
   });
 
   // ═══════════════════════════════════════════════════════════════
-  // PUBLIC SHARE – serve file or folder listing (no auth)
+  // PUBLIC SHARES – anonymous collaborative folder endpoints
   // ═══════════════════════════════════════════════════════════════
+
+  // Helper to retrieve files for a share
+  async function queryShareFiles(env: any, share: any, project = '') {
+    const targetFolderId = share.folder_id;
+    let targetFolderIds: number[] = [];
+
+    if (project) {
+      const projFolder = await env.DB.prepare(
+        `SELECT id FROM storage_folders WHERE parent_id = ? AND name = ? AND trashed_at IS NULL AND deleted_at IS NULL LIMIT 1`
+      ).bind(targetFolderId, project).first() as any;
+      if (projFolder?.id) {
+        targetFolderIds = await getDescendantFolderIds(env.DB, projFolder.id);
+      } else {
+        return [];
+      }
+    } else {
+      targetFolderIds = await getDescendantFolderIds(env.DB, targetFolderId);
+    }
+
+    if (targetFolderIds.length === 0) targetFolderIds = [targetFolderId];
+    const placeholders = targetFolderIds.map(() => '?').join(',');
+    const sql = `
+      SELECT uf.object_key, uf.filename, uf.content_type, uf.size, uf.created_at, uf.folder_id, f.name as folder_name
+      FROM uploaded_files uf
+      LEFT JOIN storage_folders f ON f.id = uf.folder_id
+      WHERE uf.folder_id IN (${placeholders})
+        AND uf.trashed_at IS NULL
+        AND NOT EXISTS (SELECT 1 FROM pending_r2_delete WHERE pending_r2_delete.object_key = uf.object_key)
+      ORDER BY uf.created_at DESC
+      LIMIT 500
+    `;
+    const { results } = await env.DB.prepare(sql).bind(...targetFolderIds).all();
+    return (results || []).map((r: any) => ({
+      key: r.object_key,
+      name: r.filename,
+      filename: r.filename,
+      type: r.content_type,
+      size: Number(r.size || 0),
+      url: `/files/${encodeURIComponent(r.object_key)}`,
+      folderId: r.folder_id,
+      folderName: r.folder_name,
+      project: r.folder_name && r.folder_name !== AGENT_SHARED_FOLDER_NAME ? r.folder_name : null,
+      createdAt: r.created_at,
+      created_at: r.created_at,
+    }));
+  }
+
+  // 1. GET /api/storage/shares/:token/files
+  app.get('/api/storage/shares/:token/files', async (c: any) => {
+    const token = c.req.param('token');
+    if (token === AGENT_SHARED_TOKEN) {
+      await ensureAgentSharedFolder(c.env.DB);
+    }
+    const share = await c.env.DB.prepare(
+      `SELECT id, folder_id, object_key, owner_user_id FROM storage_shares WHERE token = ? LIMIT 1`
+    ).bind(token).first() as any;
+
+    if (!share) {
+      return errorResponse('分享链接不存在或已过期', 404);
+    }
+
+    if (share.object_key) {
+      const file = await c.env.DB.prepare(
+        `SELECT object_key, filename, content_type, size, created_at, folder_id FROM uploaded_files WHERE object_key = ? LIMIT 1`
+      ).bind(share.object_key).first() as any;
+      if (!file) return errorResponse('文件不存在', 404);
+      return c.json({
+        success: true,
+        file: {
+          key: file.object_key,
+          name: file.filename,
+          filename: file.filename,
+          type: file.content_type,
+          size: Number(file.size || 0),
+          url: `/files/${encodeURIComponent(file.object_key)}`,
+          folderId: file.folder_id,
+          createdAt: file.created_at,
+          created_at: file.created_at,
+        }
+      });
+    }
+
+    const folder = await c.env.DB.prepare(
+      `SELECT id, name FROM storage_folders WHERE id = ? LIMIT 1`
+    ).bind(share.folder_id).first() as any;
+
+    const project = (c.req.query('project') || c.req.query('subfolder') || '').trim();
+    const files = await queryShareFiles(c.env, share, project);
+
+    return c.json({
+      success: true,
+      folder: { id: share.folder_id, name: folder?.name || '共享文件夹' },
+      project: project || null,
+      files,
+      count: files.length,
+    });
+  });
+
+  // 2. GET /api/storage/shares/:token/latest
+  app.get('/api/storage/shares/:token/latest', async (c: any) => {
+    const token = c.req.param('token');
+    if (token === AGENT_SHARED_TOKEN) {
+      await ensureAgentSharedFolder(c.env.DB);
+    }
+    const share = await c.env.DB.prepare(
+      `SELECT id, folder_id, object_key, owner_user_id FROM storage_shares WHERE token = ? LIMIT 1`
+    ).bind(token).first() as any;
+
+    if (!share) {
+      return errorResponse('分享链接不存在或已过期', 404);
+    }
+
+    let targetRow: any = null;
+
+    if (share.object_key) {
+      targetRow = await c.env.DB.prepare(
+        `SELECT uf.object_key, uf.filename, uf.content_type, uf.size, uf.created_at, uf.folder_id, f.name as folder_name
+         FROM uploaded_files uf
+         LEFT JOIN storage_folders f ON f.id = uf.folder_id
+         WHERE uf.object_key = ? LIMIT 1`
+      ).bind(share.object_key).first();
+    } else if (share.folder_id) {
+      const project = (c.req.query('project') || c.req.query('subfolder') || '').trim();
+      let targetFolderIds: number[] = [];
+
+      if (project) {
+        const projFolder = await c.env.DB.prepare(
+          `SELECT id FROM storage_folders WHERE parent_id = ? AND name = ? AND trashed_at IS NULL AND deleted_at IS NULL LIMIT 1`
+        ).bind(share.folder_id, project).first() as any;
+        if (projFolder?.id) {
+          targetFolderIds = await getDescendantFolderIds(c.env.DB, projFolder.id);
+        } else {
+          return c.json({ success: true, file: null, message: `项目 ${project} 尚无文件` });
+        }
+      } else {
+        targetFolderIds = await getDescendantFolderIds(c.env.DB, share.folder_id);
+      }
+
+      if (targetFolderIds.length === 0) targetFolderIds = [share.folder_id];
+      const placeholders = targetFolderIds.map(() => '?').join(',');
+      const sql = `
+        SELECT uf.object_key, uf.filename, uf.content_type, uf.size, uf.created_at, uf.folder_id, f.name as folder_name
+        FROM uploaded_files uf
+        LEFT JOIN storage_folders f ON f.id = uf.folder_id
+        WHERE uf.folder_id IN (${placeholders})
+          AND uf.trashed_at IS NULL
+          AND NOT EXISTS (SELECT 1 FROM pending_r2_delete WHERE pending_r2_delete.object_key = uf.object_key)
+        ORDER BY uf.created_at DESC
+        LIMIT 1
+      `;
+      targetRow = await c.env.DB.prepare(sql).bind(...targetFolderIds).first();
+    }
+
+    if (!targetRow) {
+      return c.json({ success: true, file: null, message: '文件夹为空，暂无文件' });
+    }
+
+    // Decrypt content from R2
+    let textContent = '';
+    if (c.env.FILES) {
+      const obj = await c.env.FILES.get(targetRow.object_key);
+      if (obj) {
+        const buf = await obj.arrayBuffer();
+        try {
+          const dec = await decryptAttachment(c.env, buf, targetRow.object_key);
+          textContent = new TextDecoder('utf-8').decode(dec.bytes);
+        } catch {
+          textContent = new TextDecoder('utf-8').decode(new Uint8Array(buf));
+        }
+      }
+    }
+
+    const isRaw = c.req.query('raw') === '1' || c.req.query('raw') === 'true';
+    if (isRaw) {
+      return new Response(textContent, {
+        headers: {
+          'Content-Type': targetRow.content_type || 'text/plain; charset=utf-8',
+          'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(targetRow.filename)}`,
+          'Cache-Control': 'no-cache',
+        }
+      });
+    }
+
+    return c.json({
+      success: true,
+      file: {
+        key: targetRow.object_key,
+        filename: targetRow.filename,
+        name: targetRow.filename,
+        size: Number(targetRow.size || 0),
+        type: targetRow.content_type,
+        folderId: targetRow.folder_id,
+        folderName: targetRow.folder_name,
+        project: targetRow.folder_name && targetRow.folder_name !== AGENT_SHARED_FOLDER_NAME ? targetRow.folder_name : null,
+        url: `/files/${encodeURIComponent(targetRow.object_key)}`,
+        createdAt: targetRow.created_at,
+        created_at: targetRow.created_at,
+        content: textContent,
+      }
+    });
+  });
+
+  // 3. POST /api/storage/shares/:token/files
+  app.post('/api/storage/shares/:token/files', async (c: any) => {
+    if (!c.env.FILES) return errorResponse('当前部署没有绑定 R2，无法上传文件', 503);
+    const token = c.req.param('token');
+    if (token === AGENT_SHARED_TOKEN) {
+      await ensureAgentSharedFolder(c.env.DB);
+    }
+    const share = await c.env.DB.prepare(
+      `SELECT id, folder_id, owner_user_id FROM storage_shares WHERE token = ? LIMIT 1`
+    ).bind(token).first() as any;
+
+    if (!share || !share.folder_id) {
+      return errorResponse('无效的共享目录链接', 404);
+    }
+
+    const contentTypeHeader = c.req.header('content-type') || '';
+    let rawFilename = '';
+    let fileBuffer: ArrayBuffer;
+    let mime = '';
+    let projectName = (c.req.query('project') || c.req.query('subfolder') || '').trim();
+
+    if (contentTypeHeader.includes('multipart/form-data')) {
+      const formData = await c.req.formData();
+      const file = formData.get('file');
+      if (!(file instanceof File)) return errorResponse('请选择有效文件');
+      rawFilename = file.name;
+      fileBuffer = await file.arrayBuffer();
+      mime = file.type || getMimeTypeFromFilename(rawFilename);
+      const formProject = formData.get('project') || formData.get('subfolder');
+      if (formProject && !projectName) projectName = String(formProject).trim();
+    } else {
+      const body = await c.req.json().catch(() => ({}));
+      rawFilename = body.filename || body.fileName || body.name || 'report.md';
+      const rawContent = body.content ?? body.contentBase64;
+      if (rawContent === undefined || rawContent === null) return errorResponse('文件内容不能为空');
+      const isBase64 = body.isBase64 || Boolean(body.contentBase64);
+      if (isBase64) {
+        const bin = atob(String(rawContent));
+        const u8 = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+        fileBuffer = u8.buffer;
+      } else {
+        fileBuffer = new TextEncoder().encode(String(rawContent)).buffer;
+      }
+      mime = body.contentType || body.content_type || getMimeTypeFromFilename(rawFilename);
+      if (body.project && !projectName) projectName = String(body.project).trim();
+    }
+
+    // Determine target folder (root shared folder or project subfolder)
+    let targetFolderId = share.folder_id;
+    if (projectName) {
+      targetFolderId = await ensureProjectFolder(c.env.DB, share.folder_id, projectName, Number(share.owner_user_id) || 1);
+    }
+
+    // Apply auto timestamp naming: YYYYMMDD_HHmmss_${name}
+    const finalFilename = applyAutoTimestamp(rawFilename);
+
+    const ext = finalFilename.includes('.') ? finalFilename.slice(finalFilename.lastIndexOf('.')) : '';
+    const ownerUserId = Number(share.owner_user_id) || 1;
+    const key = `${ownerUserId}/${Date.now()}-${nanoid(10)}${ext}`;
+
+    // Encrypt and store to R2
+    let toStore: ArrayBuffer;
+    try {
+      toStore = await encryptAttachment(c.env, fileBuffer, key);
+    } catch {
+      toStore = fileBuffer;
+    }
+
+    await c.env.FILES.put(key, toStore, {
+      httpMetadata: { contentType: mime, cacheControl: 'private, no-store' },
+      customMetadata: { filename: finalFilename, edgechatEncryption: 'v1' },
+    });
+
+    const n = now();
+    await c.env.DB.prepare(
+      `INSERT INTO uploaded_files (object_key, owner_user_id, filename, content_type, size, folder_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(object_key) DO UPDATE SET filename = excluded.filename, size = excluded.size, folder_id = excluded.folder_id, updated_at = excluded.updated_at`
+    ).bind(key, ownerUserId, finalFilename, mime, fileBuffer.byteLength, targetFolderId, n, n).run();
+
+    return c.json({
+      success: true,
+      file: {
+        key,
+        name: finalFilename,
+        filename: finalFilename,
+        size: fileBuffer.byteLength,
+        type: mime,
+        folderId: targetFolderId,
+        project: projectName || null,
+        url: `/files/${encodeURIComponent(key)}`,
+        createdAt: n,
+        created_at: n,
+      }
+    }, 201);
+  });
+
+  // 4. GET /api/storage/share-view/:token (HTML view & JSON view)
   app.get('/api/storage/share-view/:token', async (c: any) => {
-    const token = c.req.param('token');    const share = await c.env.DB.prepare(
+    const token = c.req.param('token');
+    if (token === AGENT_SHARED_TOKEN) {
+      await ensureAgentSharedFolder(c.env.DB);
+    }
+    const share = await c.env.DB.prepare(
       `SELECT object_key, folder_id FROM storage_shares WHERE token = ? LIMIT 1`
     ).bind(token).first() as any;
 
@@ -524,13 +967,30 @@ export function registerStorageRoutes(app: any) {
         <h2>链接无效或已过期</h2><p>该分享链接不存在或已被删除。</p></body></html>`, 404);
     }
 
+    const wantsJson = c.req.query('format') === 'json' || (c.req.header('accept') || '').includes('application/json');
+
     // File share
     if (share.object_key) {
       const row = await c.env.DB.prepare(
-        `SELECT filename, content_type FROM uploaded_files WHERE object_key = ? LIMIT 1`
+        `SELECT object_key, filename, content_type, size, created_at FROM uploaded_files WHERE object_key = ? LIMIT 1`
       ).bind(share.object_key).first() as any;
       if (!row || !c.env.FILES) {
-        return c.html(`<html><body>文件不存在</body></html>`, 404);
+        return wantsJson ? errorResponse('文件不存在', 404) : c.html(`<html><body>文件不存在</body></html>`, 404);
+      }
+      if (wantsJson) {
+        return c.json({
+          success: true,
+          file: {
+            key: row.object_key,
+            filename: row.filename,
+            name: row.filename,
+            type: row.content_type,
+            size: Number(row.size || 0),
+            url: `/files/${encodeURIComponent(row.object_key)}`,
+            createdAt: row.created_at,
+            created_at: row.created_at,
+          }
+        });
       }
       const obj = await c.env.FILES.get(share.object_key);
       if (!obj) return c.html(`<html><body>文件不存在于存储</body></html>`, 404);
@@ -555,39 +1015,79 @@ export function registerStorageRoutes(app: any) {
       });
     }
 
-    // Folder share – list contents as HTML
+    // Folder share
     if (share.folder_id) {
       const folder = await c.env.DB.prepare(
         `SELECT name FROM storage_folders WHERE id = ? LIMIT 1`
       ).bind(share.folder_id).first() as any;
-      const { results: files } = await c.env.DB.prepare(
-        `SELECT object_key, filename, content_type, size, created_at FROM uploaded_files
-         WHERE folder_id = ? AND trashed_at IS NULL ORDER BY filename ASC`
-      ).bind(share.folder_id).all();
 
-      const rows = (files || []).map((f: any) => {
-        const fileShareUrl = `/files/${encodeURIComponent(f.object_key)}`;
+      const project = (c.req.query('project') || c.req.query('subfolder') || '').trim();
+      const files = await queryShareFiles(c.env, share, project);
+
+      if (wantsJson) {
+        return c.json({
+          success: true,
+          folder: { id: share.folder_id, name: folder?.name || '共享文件夹' },
+          project: project || null,
+          files,
+          count: files.length,
+        });
+      }
+
+      const rows = files.map((f: any) => {
+        const fileShareUrl = `/files/${encodeURIComponent(f.key)}`;
         const size = Number(f.size || 0);
         const kb = size > 1024 * 1024 ? `${(size/1024/1024).toFixed(1)} MB` : `${(size/1024).toFixed(1)} KB`;
+        const projectBadge = f.project
+          ? `<span style="background:#e0e7ff;color:#3730a3;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:600">${f.project}</span>`
+          : `<span style="color:#94a3b8;font-size:12px">根目录</span>`;
         return `<tr>
-          <td style="padding:8px 12px"><a href="${fileShareUrl}" target="_blank" style="color:#2563eb;text-decoration:none">${f.filename}</a></td>
-          <td style="padding:8px 12px;color:#666">${f.content_type}</td>
-          <td style="padding:8px 12px;color:#666">${kb}</td>
+          <td style="padding:10px 12px"><a href="${fileShareUrl}" target="_blank" style="color:#2563eb;text-decoration:none;font-weight:500">${f.filename}</a></td>
+          <td style="padding:10px 12px">${projectBadge}</td>
+          <td style="padding:10px 12px;color:#64748b;font-size:13px">${f.type}</td>
+          <td style="padding:10px 12px;color:#64748b;font-size:13px">${kb}</td>
+          <td style="padding:10px 12px;color:#64748b;font-size:13px">${f.createdAt ? new Date(f.createdAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }) : '—'}</td>
         </tr>`;
       }).join('');
 
+      const folderDisplayName = folder?.name || '共享文件夹';
+
       return c.html(`<!DOCTYPE html><html><head><meta charset="utf-8">
-        <title>共享文件夹: ${folder?.name || '未知'}</title>
-        <style>body{font-family:system-ui,sans-serif;padding:40px;max-width:900px;margin:0 auto}
-        h1{font-size:1.5rem;margin-bottom:4px}p{color:#666;margin-bottom:24px}
-        table{width:100%;border-collapse:collapse}th{text-align:left;padding:8px 12px;border-bottom:2px solid #e2e8f0;font-size:.875rem;color:#374151}
-        tr:hover{background:#f8fafc}tr{border-bottom:1px solid #f1f5f9}</style>
+        <title>共享文件夹: ${folderDisplayName}</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+          body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:32px 20px;max-width:960px;margin:0 auto;color:#1e293b;background:#f8fafc}
+          .card{background:#ffffff;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,0.06);border:1px solid #e2e8f0;padding:24px;margin-bottom:24px}
+          h1{font-size:1.4rem;margin:0 0 6px 0;display:flex;align-items:center;gap:8px}
+          p.subtitle{color:#64748b;margin:0 0 20px 0;font-size:0.9rem}
+          .banner{background:linear-gradient(135deg,#eff6ff,#e0e7ff);border:1px solid #c7d2fe;border-radius:10px;padding:16px 20px;margin-bottom:20px}
+          .banner-title{font-size:0.95rem;font-weight:700;color:#3730a3;display:flex;align-items:center;gap:6px}
+          .banner-desc{color:#4338ca;font-size:0.85rem;margin-top:6px;line-height:1.6}
+          .banner code{background:#ffffff;border:1px solid #c7d2fe;padding:2px 6px;border-radius:4px;font-size:0.8rem;color:#1e1b4b}
+          table{width:100%;border-collapse:collapse}
+          th{text-align:left;padding:10px 12px;border-bottom:2px solid #e2e8f0;font-size:.82rem;text-transform:uppercase;color:#64748b;font-weight:600}
+          tr:hover{background:#f1f5f9}
+          tr{border-bottom:1px solid #f1f5f9}
+        </style>
         </head><body>
-        <h1>📂 ${folder?.name || '共享文件夹'}</h1>
-        <p>${(files||[]).length} 个文件</p>
-        <table><thead><tr><th>文件名</th><th>类型</th><th>大小</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="3" style="padding:20px;text-align:center;color:#9ca3af">文件夹为空</td></tr>'}</tbody>
-        </table></body></html>`);
+        <div class="card">
+          <h1>📂 ${folderDisplayName}</h1>
+          <p class="subtitle">共 ${files.length} 个文件 • 默认按上传时间倒序排列</p>
+          <div class="banner">
+            <div class="banner-title">🔒 免密协作共享目录（只读 / 直传端点）</div>
+            <div class="banner-desc">
+              ⚡ WorkBuddy & Antigravity 自动化协同流水线已激活<br>
+              • 文件名自动格式化为 <code>YYYYMMDD_HHmmss</code> 倒序排列<br>
+              • 支持通过 <code>POST /api/storage/shares/${token}/files</code> 匿名直传报告<br>
+              • 支持通过 <code>GET /api/storage/shares/${token}/latest</code> 免密拉取最新报告
+            </div>
+          </div>
+          <table>
+            <thead><tr><th>文件名</th><th>所属项目</th><th>类型</th><th>大小</th><th>上传时间 (最新居首)</th></tr></thead>
+            <tbody>${rows || '<tr><td colspan="5" style="padding:28px;text-align:center;color:#94a3b8">文件夹为空</td></tr>'}</tbody>
+          </table>
+        </div>
+        </body></html>`);
     }
 
     return c.html(`<html><body>无效链接</body></html>`, 404);

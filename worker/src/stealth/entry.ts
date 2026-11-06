@@ -22,6 +22,9 @@ async function assets(request: Request, env, settings, authenticated?: boolean) 
   // Public share link redirect: check storage_shares first, then fall back to FlareDraw
   if (path.startsWith('/s/')) {
     const shareId = path.slice(3);
+    if (shareId === 'agent-shared') {
+      return Response.redirect(`${url.origin}/api/storage/share-view/agent-shared`, 302);
+    }
     if (env.DB) {
       const storageShare = await env.DB.prepare(
         `SELECT object_key, folder_id FROM storage_shares WHERE token = ? LIMIT 1`
@@ -105,6 +108,18 @@ export function createSiteEntry(dispatch) {
       if (path === settings.loginPath && request.method === 'POST') return await submitGate(request, env, settings);
       const callback = await integration(request, env, ctx, dispatch);
       if (callback) return callback;
+
+      // Public share routes & endpoints bypass stealth session gate
+      if (path.startsWith('/s/')) {
+        return await assets(request, env, settings);
+      }
+      if (
+        path.startsWith('/api/storage/shares/') ||
+        path.startsWith('/api/storage/share-view/')
+      ) {
+        return privateResponse(await dispatch(request, env, ctx));
+      }
+
       const token = extractSessionToken(request);
       const validation = token ? await validateSession(env, token) : { ok: false };
       if (!validation.ok) {

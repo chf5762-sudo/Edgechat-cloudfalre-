@@ -96,6 +96,9 @@ registerInstanceBridgePublicRoutes(app);
 // Public share link: check storage_shares first, then fall back to FlareDraw drawing share
 app.get('/s/:shareId', async (c) => {
   const shareId = c.req.param('shareId');
+  if (shareId === 'agent-shared') {
+    return c.redirect('/api/storage/share-view/agent-shared', 302);
+  }
   // Check if this is a storage share token
   const storageShare = await c.env.DB.prepare(
     `SELECT object_key, folder_id FROM storage_shares WHERE token = ? LIMIT 1`

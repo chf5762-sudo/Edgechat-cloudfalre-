@@ -310,6 +310,11 @@ function startRenameFolder(folder) {
 }
 
 async function commitRenameFolder(folder) {
+  if (folder.name === 'agent-共享免密目录') {
+    toast('该共享免密目录为系统受保护根目录，不可重命名', 'error');
+    renamingFolderId.value = null;
+    return;
+  }
   if (!renameValue.value.trim() || renameValue.value === folder.name) {
     renamingFolderId.value = null;
     return;
@@ -325,6 +330,10 @@ async function commitRenameFolder(folder) {
 }
 
 async function trashFolder(folder) {
+  if (folder.name === 'agent-共享免密目录') {
+    toast('该共享免密目录为系统受保护根目录，不可删除', 'error');
+    return;
+  }
   if (!confirm(`将文件夹 "${folder.name}" 及其文件移入回收站?`)) return;
   try {
     await apiDelete(`/api/storage/folders/${folder.id}`);
@@ -431,7 +440,10 @@ function toggleSelectFolder(folder) {
 
 async function batchTrash() {
   const keys = [...selectedKeys.value];
-  const folderIds = [...selectedFolderIds.value];
+  const folderIds = [...selectedFolderIds.value].filter(id => {
+    const f = folders.value.find(item => item.id === id);
+    return f?.name !== 'agent-共享免密目录';
+  });
   if (!keys.length && !folderIds.length) return;
   if (!confirm(`将选中的 ${keys.length + folderIds.length} 个项目移入回收站?`)) return;
   try {
@@ -798,7 +810,8 @@ onMounted(loadAll);
             <!-- Folders (always first) -->
             <tr v-for="folder in sortedFolders" :key="`folder-${folder.id}`" class="file-row">
               <td class="td-check">
-                <input type="checkbox" :checked="selectedFolderIds.has(folder.id)" @change="toggleSelectFolder(folder)" />
+                <input v-if="folder.name !== 'agent-共享免密目录'" type="checkbox" :checked="selectedFolderIds.has(folder.id)" @change="toggleSelectFolder(folder)" />
+                <span v-else style="display:inline-block;width:16px;text-align:center;font-size:13px" title="受保护根目录">🔒</span>
               </td>
               <td class="td-name" @dblclick="activeView!=='trash' && openFolder(folder)">
                 <div class="name-cell">
@@ -835,15 +848,16 @@ onMounted(loadAll);
                     </button>
                   </template>
                   <template v-else>
-                    <button class="btn-action" title="重命名" @click="startRenameFolder(folder)">
+                    <button v-if="folder.name !== 'agent-共享免密目录'" class="btn-action" title="重命名" @click="startRenameFolder(folder)">
                       <PencilLine :size="14" />
                     </button>
                     <button class="btn-action" title="分享文件夹" @click="shareFolder(folder)">
                       <Share2 :size="14" />
                     </button>
-                    <button class="btn-action btn-action--danger" title="移入回收站" @click="trashFolder(folder)">
+                    <button v-if="folder.name !== 'agent-共享免密目录'" class="btn-action btn-action--danger" title="移入回收站" @click="trashFolder(folder)">
                       <Trash2 :size="14" />
                     </button>
+                    <span v-else class="type-badge" style="background:#eef2ff;color:#4338ca;font-size:11px;padding:2px 6px;border-radius:4px" title="受保护共享根目录（不可删除）">🔒 受保护</span>
                   </template>
                 </div>
               </td>

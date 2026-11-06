@@ -34,7 +34,7 @@ async function callMcpTool(name, args = {}, id = 1) {
 }
 
 async function runAllTests() {
-  console.log('=== Starting End-to-End MCP 22 Tools Health Test ===\n');
+  console.log('=== Starting End-to-End MCP 24 Tools Health Test ===\n');
   const results = [];
   let createdDrawingId = null;
   let createdShareId = null;
@@ -264,20 +264,41 @@ async function runAllTests() {
       filename: testFileName,
       content: 'EdgeChat MCP Storage Test Content ' + new Date().toISOString(),
       contentType: 'text/plain',
+      shareToken: 'agent-shared',
+      project: 'McpHealthTest',
+      autoTimestamp: true,
     });
     const parsed = JSON.parse(r.data?.result?.content?.[0]?.text || '{}');
     uploadedFileKey = parsed.file?.key;
     return r.data?.result;
   });
 
-  // 20. storage_list_files
-  await test('20. storage_list_files', async () => {
+  // 20. storage_read_file
+  await test('20. storage_read_file', async () => {
+    if (!uploadedFileKey) throw new Error('No uploaded file key');
+    const r = await callMcpTool('storage_read_file', {
+      key: uploadedFileKey,
+    });
+    return r.data?.result;
+  });
+
+  // 21. storage_get_latest_file
+  await test('21. storage_get_latest_file', async () => {
+    const r = await callMcpTool('storage_get_latest_file', {
+      shareToken: 'agent-shared',
+      project: 'McpHealthTest',
+    });
+    return r.data?.result;
+  });
+
+  // 22. storage_list_files
+  await test('22. storage_list_files', async () => {
     const r = await callMcpTool('storage_list_files', { limit: 10 });
     return r.data?.result;
   });
 
-  // 21. storage_get_file_info
-  await test('21. storage_get_file_info', async () => {
+  // 23. storage_get_file_info
+  await test('23. storage_get_file_info', async () => {
     if (!uploadedFileKey) throw new Error('No uploaded file key');
     const r = await callMcpTool('storage_get_file_info', {
       key: uploadedFileKey,
@@ -285,8 +306,8 @@ async function runAllTests() {
     return r.data?.result;
   });
 
-  // 22. storage_delete_file
-  await test('22. storage_delete_file', async () => {
+  // 24. storage_delete_file
+  await test('24. storage_delete_file', async () => {
     if (!uploadedFileKey) throw new Error('No uploaded file key');
     const r = await callMcpTool('storage_delete_file', {
       key: uploadedFileKey,
@@ -301,7 +322,7 @@ async function runAllTests() {
     console.log('Failed tests:', results.filter(r => !r.passed).map(r => r.name));
     process.exit(1);
   } else {
-    console.log('🎉 ALL 22 MCP TOOLS PASSED SUCCESSFULLY (100%)!');
+    console.log('🎉 ALL 24 MCP TOOLS PASSED SUCCESSFULLY (100%)!');
   }
 }
 

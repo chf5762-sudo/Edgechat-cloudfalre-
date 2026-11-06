@@ -1,0 +1,28 @@
+{
+  "name": "flaredraw",
+  "account_id": "32d7b370355d02428caaad2e85bd9207",
+  "compatibility_date": "2026-03-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "./src/server/index.ts",
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/.well-known/*", "/oauth/*"]
+  },
+  "observability": {
+    "enabled": true
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "flaredraw-db",
+      "database_id": "b676d7fc-bdff-40c4-9f4b-83db4bbcc3ca",
+      "migrations_dir": "drizzle"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "STORAGE",
+      "bucket_name": "flaredraw-storage"
+    }
+  ]
+}

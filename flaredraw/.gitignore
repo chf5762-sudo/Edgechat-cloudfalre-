@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Build
+dist/
+
+# Cloudflare
+.wrangler/
+.dev.vars
+
+# Environment
+.env
+.env.local
+.env.production.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Generated fonts (copied from @excalidraw/excalidraw via postinstall)
+public/fonts/
+
+# Claude Code
+.claude/screenshots/
+.claude/artifacts/
+
+# Logs
+*.log
+npm-debug.log*

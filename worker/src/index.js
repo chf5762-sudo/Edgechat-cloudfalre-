@@ -41,6 +41,7 @@ import { registerUploadRoutes } from './api/upload.js';
 import { registerUserBlockRoutes } from './api/user-blocks.ts';
 import { registerUserProfileRoutes } from './api/user-profile.ts';
 import { registerV1Routes } from './api/v1.js';
+import { registerFlareDrawRoutes } from './flaredraw/index.ts';
 import {
   registerTelegramAdminRoutes,
   registerTelegramPublicRoutes,
@@ -172,6 +173,7 @@ app.post('/api/auth/login', async (c) => {
 });
 
 registerV1Routes(app);
+registerFlareDrawRoutes(app);
 
 app.use('/api/*', authMiddleware);
 registerLoginNetworkRoutes(app);

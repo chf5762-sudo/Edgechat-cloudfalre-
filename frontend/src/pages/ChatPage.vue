@@ -753,7 +753,7 @@ watch(
       <!-- 沉浸式内嵌：在线画布 -->
       <div v-if="canvasVisited" v-show="isCanvasView" class="embedded-container">
         <iframe
-          src="https://flaredraw.chf5762-32d.workers.dev/?key=576257"
+          src="/flaredraw/"
           class="embedded-iframe"
           title="Canvas"
           allow="clipboard-read; clipboard-write; fullscreen"
@@ -772,7 +772,7 @@ watch(
       <!-- 沉浸式内嵌：记事本功能 -->
       <div v-if="notesVisited" v-show="isNotesView" class="embedded-container">
         <iframe
-          src="https://flaredraw.chf5762-32d.workers.dev/?tab=notes&key=576257"
+          src="/flaredraw/?tab=notes"
           class="embedded-iframe"
           title="Notes"
           allow="clipboard-read; clipboard-write; fullscreen"

@@ -341,6 +341,32 @@ async function sendComposerVoice(recording) {
 	if (sent) replyingTo.value = null;
 	return sent;
 }
+
+async function handleBotCardAction(action, card, message) {
+  try {
+    const actionLabel = action.label || action.id;
+    const cardTitle = card.title || '方案卡片';
+    const payload = action.payload || actionLabel;
+
+    await fetch('/api/bot/action-callback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        channelId: activeRoom.value?.id,
+        actionId: action.id,
+        actionPayload: payload,
+        cardTitle
+      })
+    }).catch(() => {});
+
+    const oldDraft = composerText.value;
+    composerText.value = `[Bot 交互确认] 我已确认【${actionLabel}】(针对: ${cardTitle})`;
+    await sendMessage([], message?.id);
+    composerText.value = oldDraft;
+  } catch (err) {
+    console.warn('Bot action failed', err);
+  }
+}
 const {
   show: showGroupEditor,
   form: groupSettingsForm,
@@ -1219,6 +1245,7 @@ watch(
               @long-press="startMessageLongPress"
               @track-press="trackMessageLongPress"
               @cancel-press="cancelMessageLongPress"
+              @action="handleBotCardAction"
             />
           </section>
 

@@ -22,6 +22,7 @@ const emit = defineEmits<{
 	"long-press": [event: PointerEvent, message: MessageView];
 	"track-press": [event: PointerEvent];
 	"cancel-press": [];
+	action: [action: any, card: any, message: MessageView];
 }>();
 
 // 每行依赖自身消息，而不是整个列表；追加消息时旧行无需重新生成气泡。
@@ -62,7 +63,13 @@ const time = computed(() => props.msg.createdAt ? formatTime(props.msg.createdAt
 				:clickable="!msg.replyTo.deleted"
 				@reveal="emit('reveal', msg.replyToMessageId)"
 			/>
-			<MessageMarkdown v-if="msg.content" :content="msg.content" :mentions="msg.mentions" :current-user-id="currentUserId" />
+			<MessageMarkdown
+				v-if="msg.content"
+				:content="msg.content"
+				:mentions="msg.mentions"
+				:current-user-id="currentUserId"
+				@action="(act, card) => emit('action', act, card, msg)"
+			/>
 			<MessageAttachment v-if="msg.attachment" :attachment="msg.attachment" />
 			<span class="message-time">{{ time }}</span>
 		</div>

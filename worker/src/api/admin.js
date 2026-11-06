@@ -236,18 +236,42 @@ export function registerAdminRoutes(app) {
   });
 
   app.delete('/api/admin/users/:userId', async (c) => {
-    const userId = Number(c.req.param('userId'));
-    await c.env.DB.prepare(
-      `UPDATE users
-       SET deleted_at = CURRENT_TIMESTAMP,
-            is_disabled = 1,
-            disabled_until = NULL,
-            session_version = session_version + 1,
-            updated_at = CURRENT_TIMESTAMP
-       WHERE id = ?`
-    )
-      .bind(userId)
-      .run();
+    const rawId = c.req.param('userId');
+    const userId = Number(rawId);
+    if (!/^[1-9]\d*$/.test(rawId) || !Number.isSafeInteger(userId)) {
+      return errorResponse('用户不存在', 404);
+    }
+
+    const user = await c.env.DB.prepare(
+      `SELECT id, username, is_super_admin FROM users WHERE id = ?`
+    ).bind(userId).first();
+
+    if (!user) {
+      return errorResponse('用户不存在', 404);
+    }
+    if (user.is_super_admin) {
+      return errorResponse('无法删除超级管理员', 403);
+    }
+
+    const archivedUsername = user.username.startsWith('__del_')
+      ? user.username
+      : `__del_${userId}_${user.username}`.slice(0, 80);
+
+    await c.env.DB.batch([
+      c.env.DB.prepare(
+        `UPDATE users
+         SET username = ?,
+             deleted_at = COALESCE(deleted_at, CURRENT_TIMESTAMP),
+             is_disabled = 1,
+             disabled_until = NULL,
+             session_version = session_version + 1,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`
+      ).bind(archivedUsername, userId),
+      c.env.DB.prepare(
+        `DELETE FROM rbac_user_roles WHERE user_id = ?`
+      ).bind(userId),
+    ]);
 
     return c.json({ ok: true });
   });

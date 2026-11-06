@@ -41,6 +41,7 @@ import { registerUploadRoutes } from './api/upload.js';
 import { registerUserBlockRoutes } from './api/user-blocks.ts';
 import { registerUserProfileRoutes } from './api/user-profile.ts';
 import { registerV1Routes } from './api/v1.js';
+import { registerBotRoutes } from './api/bot.ts';
 import { registerFlareDrawRoutes } from './flaredraw/index.ts';
 import {
   registerTelegramAdminRoutes,
@@ -324,6 +325,7 @@ registerStealthRoutes(app);
 registerTelegramAdminRoutes(app);
 registerTelegramNotificationRoutes(app);
 registerInstanceBridgeRoutes(app);
+registerBotRoutes(app);
 
 app.get('/api/ws/:kind/:id', async (c) => {
   const session = c.get('session');

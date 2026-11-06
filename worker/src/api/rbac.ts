@@ -34,7 +34,7 @@ export function registerRbacRoutes(app) {
   app.get('/api/admin/rbac/permissions', (c) => c.json({ permissions: ADMIN_PERMISSIONS }));
   app.get('/api/admin/rbac/roles', async (c) => {
     const { results } = await c.env.DB.prepare(`SELECT r.*,
-      (SELECT COUNT(*) FROM rbac_user_roles WHERE role_id = r.id) AS memberCount,
+      (SELECT COUNT(*) FROM rbac_user_roles ur JOIN users u ON u.id = ur.user_id WHERE ur.role_id = r.id AND u.deleted_at IS NULL) AS memberCount,
       (SELECT json_group_array(permission_key) FROM rbac_role_permissions WHERE role_id = r.id) AS permissions
       FROM rbac_roles r ORDER BY r.id LIMIT 100 OFFSET ?`).bind(page(c)).all();
     return c.json({ roles: results.map((r) => ({ ...r, permissions: JSON.parse(r.permissions), enabled: Boolean(r.enabled), updatedAt: r.updated_at })) });
@@ -81,7 +81,7 @@ export function registerRbacRoutes(app) {
   app.get('/api/admin/rbac/roles/:id/members', async (c) => {
     const { results } = await c.env.DB.prepare(`SELECT u.id, u.username, u.display_name AS displayName, u.deleted_at AS deletedAt,
       u.authz_version AS authzVersion, u.is_super_admin AS isSuperAdmin, u.management_protected AS managementProtected FROM users u JOIN rbac_user_roles ur ON ur.user_id = u.id
-      WHERE ur.role_id = ? ORDER BY u.id LIMIT 100 OFFSET ?`).bind(Number(c.req.param('id')), page(c)).all();
+      WHERE ur.role_id = ? AND u.deleted_at IS NULL ORDER BY u.id LIMIT 100 OFFSET ?`).bind(Number(c.req.param('id')), page(c)).all();
     return c.json({ members: results });
   });
   app.put('/api/admin/rbac/users/:id/role', async (c) => {

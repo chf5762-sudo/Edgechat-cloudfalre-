@@ -17,6 +17,7 @@ const emit = defineEmits<{
 	"long-press": [event: PointerEvent, message: MessageView];
 	"track-press": [event: PointerEvent];
 	"cancel-press": [];
+	action: [action: any, card: any, message: MessageView];
 }>();
 </script>
 
@@ -34,5 +35,6 @@ const emit = defineEmits<{
 		@long-press="(event, message) => emit('long-press', event, message)"
 		@track-press="emit('track-press', $event)"
 		@cancel-press="emit('cancel-press')"
+		@action="(action, card, msg) => emit('action', action, card, msg)"
 	/>
 </template>
